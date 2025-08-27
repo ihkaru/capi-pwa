@@ -1,0 +1,83 @@
+# Perintah untuk menghasilkan SyncEngine, otak sinkronisasi (VERSI REFACTOR).
+description = "Generate the refactored SyncEngine class, orchestrating multiple sync strategies (initial, delta, full) and a separate background upload process."
+
+prompt = """
+Generate a TypeScript class named `SyncEngine` located in `src/services/sync/SyncEngine.ts`. This class will orchestrate the entire two-way data synchronization process by coordinating between `OfflineService` and the refactored `ApiClient`.
+
+The engine must be a Singleton and manage its own state.
+
+**1. State Management:**
+- The engine must have a reactive state to track its status. Use a Pinia store or a simple reactive object. The state should differentiate between download and upload processes.
+- **States:** `idle`, `downloading_initial`, `downloading_delta`, `downloading_full`, `uploading`, `error`.
+- This state MUST be publicly readable so the UI can display fine-grained feedback (e.g., "Mengunduh data awal...", "Mengirim perubahan...").
+
+**2. Public Methods: User-Initiated Download Strategies**
+These methods are called directly by the UI (e.g., from the ActivityDashboardPage).
+
+/**
+ * (BARU) Mengelola pengunduhan data besar pertama kali untuk sebuah kegiatan.
+ * @param activityId
+ */
+- `async performInitialDownloadForActivity(activityId: string): Promise<void>`:
+  1. Set state to `downloading_initial`.
+  2. Check for internet connection.
+  3. Call `apiClient.performInitialDownload(activityId)`.
+  4. On success, pass the entire payload to `offlineService.applyServerUpdates(activityId, payload)`. This method should be transactional.
+  5. Save the current timestamp as the `lastSyncTimestamp` for this activity using `offlineService.setMetadata(...)`.
+  6. On error, set state to `error`.
+  7. In a `finally` block, reset state to `idle`.
+
+/**
+ * (BARU) Mengelola pengunduhan perubahan delta.
+ * @param activityId
+ */
+- `async performDeltaSync(activityId: string): Promise<void>`:
+  1. Set state to `downloading_delta`.
+  2. Get `lastSyncTimestamp` from `offlineService.getMetadata(...)`.
+  3. Call `apiClient.performDeltaSync(activityId, lastSyncTimestamp)`.
+  4. On success, pass the payload to `offlineService.applyServerUpdates(...)`.
+  5. Update the `lastSyncTimestamp`.
+  6. Reset state to `idle` in a `finally` block.
+
+/**
+ * (BARU) Mengelola proses overwrite sync.
+ * @param activityId
+ */
+- `async performFullOverwriteSync(activityId: string): Promise<void>`:
+  1. Set state to `downloading_full`.
+  2. Call `offlineService.clearDataForActivity(activityId)` to wipe local data first.
+  3. Call `apiClient.performFullResync(activityId)`.
+  4. On success, pass payload to `offlineService.applyServerUpdates(...)`.
+  5. Update the `lastSyncTimestamp`.
+  6. Reset state to `idle` in a `finally` block.
+
+**3. Private Method: Automatic Background Upload Process**
+This process runs independently of user actions, focusing only on sending data to the server.
+
+/**
+ * (REFACTORED) Proses internal yang berjalan otomatis untuk mengosongkan sync_queue.
+ */
+- `private async _processUploadQueue(): Promise<void>`:
+  1. Check if state is already `uploading`. If so, exit to prevent concurrency.
+  2. Set state to `uploading`.
+  3. In a loop, get a BATCH of pending actions from `OfflineService.getNextQueueItem()`.
+  4. If the queue is empty, break the loop.
+  5. Use a `switch` statement on the action `type` (e.g., 'SUBMIT_ASSIGNMENT') to call the appropriate `ApiClient` method (e.g., `apiClient.submitAssignmentBatch(...)`).
+  6. On success, mark the batch as `'completed'`.
+  7. On failure, handle retries or mark as `'failed'`.
+  8. Reset state to `idle` in a `finally` block.
+
+**4. Initialization and Triggers:**
+
+- `initialize()`:
+  - This method is called once when the app starts. It sets up triggers for the **background upload process only**.
+  - **`online` event listener:** When the browser comes online, call `this._processUploadQueue()`.
+  - **Scheduled Upload:** Use `setInterval` to periodically call `this._processUploadQueue()`. This ensures completed work is sent to the server regularly without user intervention.
+  - **(IMPORTANT)** The user-initiated download methods (`performInitialDownload`, etc.) are NOT triggered automatically. They are only called by the UI.
+
+**5. Architectural Requirements:**
+- Must be a singleton.
+- Must inject `OfflineService` and `ApiClient`.
+- Provide a clear way for the UI to subscribe to its state changes.
+- Include detailed JSDoc comments explaining the difference between the download strategies and the upload process.
+"""

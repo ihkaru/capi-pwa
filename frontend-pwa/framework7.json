@@ -1,0 +1,27 @@
+{
+  "cwd": "C:\\projects\\herd\\capi-pwa\\frontend-pwa",
+  "type": [
+    "web",
+    "pwa",
+    "capacitor"
+  ],
+  "name": "Cerdas Mobile",
+  "pkg": "cerdasmobile",
+  "framework": "vue",
+  "template": "single-view",
+  "cssPreProcessor": "scss",
+  "bundler": "vite",
+  "capacitor": {
+    "platforms": [
+      "ios",
+      "android"
+    ]
+  },
+  "theming": {
+    "customColor": false,
+    "color": "#007aff",
+    "darkMode": false,
+    "iconFonts": true
+  },
+  "customBuild": false
+}

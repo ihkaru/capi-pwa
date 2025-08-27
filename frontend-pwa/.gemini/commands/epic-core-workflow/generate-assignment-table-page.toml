@@ -1,0 +1,80 @@
+# Perintah untuk menghasilkan Halaman Tabel Assignment yang menampilkan daftar tugas terfilter dengan kolom dinamis.
+description = "Generate the Assignment Table Page, which displays a filtered list of assignments in a table with dynamically configured columns from the form schema."
+
+prompt = """
+Generate a Vue 3 component file located at `src/views/AssignmentTablePage.vue`. This page displays a detailed, tabular list of assignments that belong to a specific location group selected on the previous page. Its columns are dynamically rendered based on the `form_schema`.
+
+**1. Technical Requirements:**
+- Use `<script setup>` with the Vue 3 Composition API.
+- The UI MUST be built with Framework7-Vue components. For the table, using `<f7-data-table>` is highly recommended for structure and styling.
+- Inject `OfflineService`.
+- Use `useRoute` to get both the `activityId` and the `locationKey` from the URL parameters.
+
+**2. Component Logic (`<script setup>`):**
+- **State Management:**
+  - `const route = useRoute();`
+  - `const activityId = computed(() => route.params.activityId as string);`
+  - `const locationKey = computed(() => route.params.locationKey as string);`
+  - `const filteredAssignments = ref<AssignmentResponse[]>([]);`: To store the final list of assignments to be displayed.
+  - `const formSchema = ref<FormSchema | null>(null);`: Needed to get the table column configuration.
+  - `const tableHeaders = ref<string[]>([]);`: A reactive ref to hold the header labels for the table.
+  - `const tableColumnsConfig = ref<any[]>([]);`: Holds the column configuration array from the schema.
+  - `const isLoading = ref<boolean>(true);`
+
+- **Core Logic - Filtering and Data Shaping:**
+  - Create a method `async function loadAndFilterData()` that will be called in `onMounted`. This method must:
+    1. Set `isLoading = true`.
+    2. In parallel, fetch:
+       a. All assignments for the activity from `OfflineService.getAllAssignments(activityId.value)`.
+       b. The form schema from `OfflineService.getFormSchema(activityId.value)`.
+    3. **Filtering Logic:**
+       - Iterate through all fetched assignments.
+       - For each assignment, check if its location code (across all `level_x_code` fields defined in `formSchema.value.assignment_table_grouping_levels`) matches the `locationKey.value` from the URL.
+       - Push all matching assignments into `filteredAssignments.value`.
+    4. **Column Configuration Logic:**
+       - Read the `formSchema.value.assignment_table_columns` array and store it in `tableColumnsConfig.value`.
+       - From this config, extract just the `label` for each column and populate `tableHeaders.value`.
+    5. Set `isLoading = false`.
+
+- **`onMounted` Lifecycle Hook:**
+  - Call `loadAndFilterData()`.
+
+- **Methods:**
+  - `function getCellValue(assignment, columnKey: string)`:
+    - This is a crucial utility function for the template to resolve the cell value dynamically.
+    - The `columnKey` will be a string like `"prefilled.nama_krt"` or `"status"`.
+    - The function must parse this key.
+    - If the key is `"status"`, it should return `assignment.status`.
+    - If the key starts with `"prefilled."`, it should access the nested value, e.g., `assignment.prefilled_data[key.split('.')[1]]`.
+    - It should handle cases where the value is null or undefined gracefully, returning an empty string or a placeholder.
+  - `function getStatusColor(status: string): string`: A utility to return a color name for the status chip.
+
+**3. Template Structure (`<template>`):**
+- **Root Element:** `<f7-page>`.
+- **Navbar:** `<f7-navbar title="Daftar Assignment" back-link="Ringkasan">`.
+
+- **Main Content:**
+  - **Loading State:**
+    - Use `v-if="isLoading"` to display a `f7-data-table` skeleton.
+  - **Data Table (`<f7-data-table>`):**
+    - Use `v-else`. The `f7-data-table` component is the main element.
+    - **Table Header (`<thead>`):**
+      - `<tr>`
+        - Loop through `tableHeaders`: `<th class="label-cell" v-for="header in tableHeaders">{{ header }}</th>`.
+      - `</tr>`
+    - **Table Body (`<tbody>`):**
+      - Loop through `filteredAssignments`: `<tr v-for="assignment in filteredAssignments" :key="assignment.assignmentId">`.
+      - This `<tr>` should be clickable, navigating to the form page: `@click="$router.push(`/activity/${activityId}/assignment/${assignment.assignmentId}`)"`.
+      - **Dynamic Cells (`<td>`):**
+        - Inside the `<tr>`, loop through the `tableColumnsConfig` to ensure the cells are rendered in the correct order.
+        - `<td class="label-cell" v-for="column in tableColumnsConfig">`
+          - **Conditional Rendering for Status:**
+            - Use `v-if="column.key === 'status'"` to render the status differently, e.g., with an `<f7-chip>`.
+            - `<f7-chip :text="getCellValue(assignment, column.key)" :color="getStatusColor(getCellValue(assignment, column.key))" />`
+          - **Default Rendering for other cells:**
+            - Use `v-else` to display the plain text value.
+            - `{{ getCellValue(assignment, column.key) }}`
+        - `</td>`
+      - `</tr>`
+
+"""

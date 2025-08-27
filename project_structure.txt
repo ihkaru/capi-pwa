@@ -1,0 +1,136 @@
+C:\projects\herd\capi-pwa\
+├───build_context.ps1
+├───full_context.txt
+├───GEMINI.md
+├───package-lock.json
+├───package.json
+├───prompt.txt
+├───.gemini\
+│   └───settings.json
+├───backend-laravel\
+│   ├───.editorconfig
+│   ├───.env
+│   ├───.env.example
+│   ├───.gitattributes
+│   ├───.gitignore
+│   ├───.phpunit.result.cache
+│   ├───artisan
+│   ├───composer.json
+│   ├───composer.lock
+│   ├───package.json
+│   ├───phpunit.xml
+│   ├───README.md
+│   ├───vite.config.js
+│   ├───app\
+│   │   ├───Constants.php
+│   │   ├───Filament\
+│   │   ├───Http\
+│   │   ├───Imports\
+│   │   ├───Models\
+│   │   ├───Policies\
+│   │   └───Providers\
+│   ├───bootstrap\
+│   │   ├───app.php
+│   │   ├───providers.php
+│   │   └───cache\
+│   ├───config\
+│   │   ├───app.php
+│   │   ├───auth.php
+│   │   ├───cache.php
+│   │   ├───database.php
+│   │   ├───filament-shield.php
+│   │   ├───filament.php
+│   │   ├───filesystems.php
+│   │   ├───logging.php
+│   │   ├───mail.php
+│   │   ├───permission.php
+│   │   ├───queue.php
+│   │   ├───sanctum.php
+│   │   ├───services.php
+│   │   └───session.php
+│   ├───database\
+│   │   ├───.gitignore
+│   │   ├───database.sqlite
+│   │   ├───data\
+│   │   ├───factories\
+│   │   ├───migrations\
+│   │   └───seeders\
+│   ├───public\
+│   │   ├───.htaccess
+│   │   ├───favicon.ico
+│   │   ├───hot
+│   │   ├───index.php
+│   │   ├───robots.txt
+│   │   ├───css\
+│   │   ├───fonts\
+│   │   └───js\
+│   ├───resources\
+│   │   ├───css\
+│   │   ├───js\
+│   │   └───views\
+│   ├───routes\
+│   │   ├───api.php
+│   │   ├───console.php
+│   │   └───web.php
+│   ├───storage\
+│   │   ├───app\
+│   │   ├───framework\
+│   │   └───logs\
+│   └───tests\
+│       ├───TestCase.php
+│       ├───Feature\
+│       └───Unit\
+├───frontend-pwa\
+│   ├───.env
+│   ├───.gitignore
+│   ├───.prettierrc.cjs
+│   ├───capacitor.config.json
+│   ├───eslint.config.js
+│   ├───framework7.json
+│   ├───package-lock.json
+│   ├───package.json
+│   ├───postcss.config.cjs
+│   ├───README.md
+│   ├───vite.config.js
+│   ├───vite.config.ts
+│   ├───vitest.config.js
+│   ├───workbox-config.cjs
+│   ├───.gemini\
+│   │   └───commands\
+│   ├───assets-src\
+│   │   ├───apple-touch-icon.png
+│   │   └───web-icon.png
+│   ├───build\
+│   ├───public\
+│   │   ├───fonts\
+│   │   └───icons\
+│   ├───resources\
+│   │   ├───icon.png
+│   │   └───splash.png
+│   ├───src\
+│   │   ├───index.html
+│   │   ├───manifest.json
+│   │   ├───assets\
+│   │   ├───components\
+│   │   ├───css\
+│   │   ├───js\
+│   │   ├───pages\
+│   │   ├───services\
+│   │   ├───tests\
+│   │   └───views\
+│   ├───src-generated\
+│   │   ├───services\
+│   │   └───views\
+│   └───www\
+│       ├───index.html
+│       ├───service-worker.js
+│       ├───service-worker.js.map
+│       ├───workbox-05e2840a.js
+│       ├───workbox-05e2840a.js.map
+│       ├───assets\
+│       ├───fonts\
+│       └───icons\
+└───spec\
+    ├───alur-kerja.md
+    ├───db.md
+    └───studi-kasus-kegiatan.md

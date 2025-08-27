@@ -1,0 +1,92 @@
+description = "Generate a type-safe ApiClient class for communicating with the Laravel backend, including new methods for the activity-based workflow and specific sync strategies."
+
+prompt = """
+Generate a TypeScript class named `ApiClient` located in `src/services/api/ApiClient.ts`. This class will serve as a centralized, singleton wrapper around Axios.
+
+**1. Axios Instance Configuration & Interceptors (Tidak Berubah):**
+Create a private Axios instance configured with:
+- `baseURL` from `VITE_API_BASE_URL`.
+- `timeout` of 15,000ms.
+- Default headers for JSON.
+- **Request Interceptor:** To inject the Bearer Token from `authStore`.
+- **Response Interceptor:** To handle global errors and automatic token refresh on 401 errors.
+
+**2. Refactored Public Method Definitions:**
+Implement the following public methods, ensuring they are all `async` and properly typed.
+
+// --- Metode Otentikasi & Inisialisasi ---
+- `async login(credentials: LoginCredentials): Promise<AuthResponse>`
+/**
+ * (BARU) Mengautentikasi pengguna menggunakan token dari Google.
+ * Backend akan memverifikasi token ini, lalu mencari/membuat user sesuai alur kerja.
+ * @param googleToken - Token ID yang diterima dari client-side Google SDK.
+ * @returns {Promise<AuthResponse>} Objek yang sama dengan login password, berisi token sesi dan data user.
+ */
+- async loginWithGoogle(googleToken: string): Promise<AuthResponse>
+- `async logout(): Promise<void>`
+- `async refreshToken(): Promise<RefreshTokenResponse>`
+
+/**
+ * (BARU) Mengambil daftar kegiatan statistik di mana pengguna terdaftar.
+ * Dipanggil oleh HomePage setelah login.
+ * @returns {Promise<Activity[]>} Array ringkas dari metadata kegiatan.
+ */
+- `async getActivitiesForUser(): Promise<Activity[]>`
+
+// --- Metode Sinkronisasi (Download dari Server) ---
+
+/**
+ * (BARU) Mengunduh seluruh data yang diperlukan untuk memulai kerja offline pada satu kegiatan.
+ * Ini adalah pengunduhan masif awal.
+ * @param activityId - ID kegiatan yang akan diunduh.
+ * @returns {Promise<InitialDownloadPayload>} Objek besar berisi assignments, form schema, dan master data.
+ */
+- `async performInitialDownload(activityId: string): Promise<InitialDownloadPayload>`
+
+/**
+ * (BARU) Mengunduh hanya perubahan (delta) yang terjadi sejak sinkronisasi terakhir.
+ * @param activityId - ID kegiatan.
+ * @param sinceTimestamp - ISO string timestamp dari sinkronisasi terakhir.
+ * @returns {Promise<DeltaSyncPayload>} Objek berisi assignment baru, status yang diperbarui, dan editan.
+ */
+- `async performDeltaSync(activityId: string, sinceTimestamp: string): Promise<DeltaSyncPayload>`
+
+/**
+ * (BARU) Mengunduh ulang seluruh data untuk satu kegiatan. Digunakan untuk overwrite sync.
+ * Secara fungsional, ini mungkin memanggil endpoint yang sama dengan performInitialDownload.
+ * @param activityId - ID kegiatan.
+ * @returns {Promise<InitialDownloadPayload>} Objek besar berisi semua data.
+ */
+- `async performFullResync(activityId: string): Promise<InitialDownloadPayload>`
+
+
+// --- Metode Aksi & Upload ---
+
+/**
+ * (RETAINED) Mengirim batch data assignment yang telah disubmit/diubah ke server.
+ * Ini adalah proses UPLOAD.
+ * @param activityId - ID kegiatan.
+ * @param payload - Array berisi assignment responses.
+ * @returns {Promise<SyncResult>}
+ */
+- `async submitAssignmentBatch(activityId: string, payload: AssignmentResponse[]): Promise<SyncResult>`
+
+/**
+ * (BARU) Memeriksa ke server tindakan apa yang diizinkan untuk assignment tertentu pada saat ini.
+ * Krusial untuk tombol Approve/Reject PML. Membutuhkan koneksi online.
+ * @param assignmentId - ID assignment yang akan diperiksa.
+ * @returns {Promise<string[]>} Array string, e.g., ['APPROVE', 'REJECT'].
+ */
+- `async getAllowedActions(assignmentId: string): Promise<string[]>`
+
+- `async uploadAssignmentPhoto(activityId: string, assignmentId: string, photo: File): Promise<FileUploadResponse>`
+  - Handles file uploads using `multipart/form-data`. This requires overriding the default JSON headers for this specific request.
+
+// --- Methods for Diagnostics ---
+- `async postErrorLogs(logs: ErrorLog[]): Promise<void>`
+
+**4. Architectural Requirements:**
+- The class must be a singleton, exporting a single pre-initialized instance.
+- Use TypeScript interfaces for all method parameters and return types to ensure type safety.
+- Include detailed JSDoc comments explaining what each method does, its parameters, and what it returns.
+"""

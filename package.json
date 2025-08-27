@@ -1,0 +1,16 @@
+{
+  "name": "capi-pwa-monorepo",
+  "private": true,
+  "workspaces": [
+    "frontend-pwa",
+    "backend-laravel"
+  ],
+  "scripts": {
+    "install-frontend": "npm install --prefix frontend-pwa",
+    "dev-frontend": "npm run dev --prefix frontend-pwa",
+    "dev": "npm run dev-frontend"
+  },
+  "dependencies": {
+    "framework7-icons": "^5.0.5"
+  }
+}

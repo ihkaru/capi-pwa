@@ -1,0 +1,85 @@
+# Perintah untuk menghasilkan Halaman Dasbor Kegiatan yang menampilkan statistik dan opsi sinkronisasi.
+description = "Generate the Activity Dashboard Page, which shows statistics, countdown, and advanced sync options for a selected activity."
+
+prompt = """
+Generate a Vue 3 component file located at `src/views/ActivityDashboardPage.vue`. This is the central hub for a user within a single statistical activity. It displays summary statistics and provides crucial data synchronization controls. The page must be fully offline-first for displaying statistics.
+
+**1. Technical Requirements:**
+- Use `<script setup>` with the Vue 3 Composition API.
+- UI must be built with Framework7-Vue components (`<f7-page>`, `<f7-navbar>`, `<f7-block>`, `<f7-card>`, `<f7-button>`, `<f7-actions>`).
+- Inject and use core singletons: `OfflineService` and `SyncEngine`.
+- Use `useRoute` to get the `activityId` from the URL parameter.
+
+**2. Component Logic (`<script setup>`):**
+- **State Management:**
+  - `const route = useRoute();`
+  - `const activityId = computed(() => route.params.activityId as string);`
+  - `const stats = ref({ total: 0, assigned: 0, submitted: 0, approved: 0, rejected: 0 });`: Holds the calculated statistics.
+  - `const activityDetails = ref<ActivityDetails | null>(null);`: To hold activity metadata like end dates. Define a placeholder interface `ActivityDetails { name: string; end_date: string; extended_end_date: string; }`.
+  - `const remainingDays = ref<number>(0);`: To display the countdown.
+  - `const isLoading = ref<boolean>(true);`: For initial data loading.
+  - `const hasInitialData = ref<boolean>(false);`: To track if the massive initial download has been performed for this activity.
+
+- **`onMounted` Lifecycle Hook:**
+  - Call a `loadDashboardData` method.
+
+- **Methods:**
+  - `async function loadDashboardData()`:
+    1. Set `isLoading = true`.
+    2. Check `OfflineService` to see if assignments for this `activityId` exist. `hasInitialData.value = await OfflineService.hasDataForActivity(activityId.value);`.
+    3. If `hasInitialData.value` is true:
+       - Fetch all assignments from `OfflineService.getAllAssignments(activityId.value)`.
+       - Fetch activity metadata (like end dates) from `OfflineService`.
+       - **Calculate statistics locally**: Iterate through the assignments to populate the `stats.value` object.
+       - **Calculate remaining days**: Implement logic based on `extended_end_date` and `end_date`.
+    4. Set `isLoading = false`.
+  
+  - `async function performInitialDownload()`:
+    - This is for users who have no data locally for this activity.
+    - It should display a loading indicator/overlay.
+    - Call a new method `SyncEngine.performInitialDownloadForActivity(activityId.value)`.
+    - After completion, reload the dashboard by calling `loadDashboardData()`.
+  
+  - `function openSyncOptions()`:
+    - This method opens an `<f7-actions>` sheet with the two sync options.
+  
+  - `async function handleSync(syncType: 'delta' | 'full')`:
+    - This method is called from the actions sheet.
+    - If `syncType` is 'delta', call `SyncEngine.performDeltaSync(activityId.value)`. Show a toast on completion.
+    - If `syncType` is 'full':
+      1. Show a strong confirmation dialog (`f7.dialog.confirm`).
+      2. If confirmed, call `SyncEngine.performFullOverwriteSync(activityId.value)`.
+      3. After completion, reload the dashboard data.
+
+**3. Template Structure (`<template>`):**
+- **Root Element:** `<f7-page>`.
+- **Navbar:** `<f7-navbar :title="activityDetails?.name || 'Dasbor'" back-link="Beranda">`.
+
+- **Main Content:**
+  - **Initial Download Offer (v-if="!hasInitialData && !isLoading"):**
+    - Display a large card (`<f7-card>`) with a message: "Data untuk kegiatan ini belum diunduh. Unduh data sekarang untuk memulai kerja offline."
+    - A prominent button `<f7-button large fill @click="performInitialDownload">Unduh Data Kegiatan</f7-button>`.
+  
+  - **Dashboard View (v-else-if="hasInitialData && !isLoading"):**
+    - **Countdown Block:**
+      - An `<f7-block-title>`: "Sisa Waktu Pelaksanaan".
+      - An `<f7-card>` displaying `remainingDays.value` in a large font with the label "Hari".
+    - **Statistics Block:**
+      - An `<f7-block-title>`: "Ringkasan Statistik".
+      - An `<f7-block strong inset>` which is `clickable` and links to the location summary page: `@click="$router.push(`/activity/${activityId}/locations`)`"
+      - Inside, display the stats using a grid or list. Example: `<div><h3>{{ stats.total }}</h3><p>Total Tugas</p></div>`.
+    - **Sync Button:**
+      - An `<f7-block>` containing a single button: `<f7-button large fill @click="openSyncOptions">Sinkronisasi Data</f7-button>`.
+
+- **Actions Sheet (Popup):**
+  - Place this at the root level of the template.
+  - `<f7-actions id="sync-actions">`
+    - `<f7-actions-group>`
+      - `<f7-actions-label>Pilih Jenis Sinkronisasi</f7-actions-label>`
+      - `<f7-actions-button @click="handleSync('delta')">Sync Perubahan Assignment</f7-actions-button>`
+      - `<f7-actions-button color="red" @click="handleSync('full')">Sync Full Assignment (Timpa Data Lokal)</f7-actions-button>`
+    - `<f7-actions-group>`
+      - `<f7-actions-button bold>Batal</f7-actions-button>`
+    - `</f7-actions-group>`
+  - `</f7-actions>`
+"""

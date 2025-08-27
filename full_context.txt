@@ -1,0 +1,1578 @@
+========================================================================
+## FILE: spec\alur-kerja.md
+========================================================================
+
+### **Spesifikasi Alur Kerja & Interaksi Entitas (Versi Final: PWA-Centric)**
+
+## 1. Pendahuluan
+
+Dokumen ini mendefinisikan alur kerja fungsional, peran, tanggung jawab, dan interaksi antara semua entitas dalam **Platform Cerdas**, sebuah sistem survei statistik berbasis CAPI. Arsitektur platform ini terdiri dari tiga komponen utama:
+
+- **Cerdas Mobile:** Aplikasi antarmuka berbasis Progressive Web App (PWA) untuk petugas lapangan (PPL dan PML).
+- **Cerdas-SM (Survei Management):** Layanan backend yang mengatur seluruh logika bisnis, data, dan API.
+- **Cerdas Form Builder:** Komponen yang direncanakan untuk manajemen skema formulir dinamis (akan dikembangkan di masa depan).
+
+Arsitektur yang dijelaskan di sini berpusat pada **Cerdas Mobile (PWA)** sebagai antarmuka utama untuk semua peran operasional di lapangan, yaitu **Petugas Pencacah Lapangan (PPL)** dan **Petugas Pemeriksa Lapangan (PML)**.
+
+Panel administrasi **Filament** secara eksklusif digunakan oleh peran administratif (`super_admin`, `admin_satker`, `admin_kegiatan`) untuk fungsi persiapan, manajemen strategis, pemantauan tingkat tinggi, dan finalisasi data. Dokumen ini bertujuan untuk memberikan pemahaman yang jelas dan mendetail mengenai siklus hidup data, dari persiapan hingga persetujuan akhir, untuk memastikan implementasi logika bisnis yang akurat.
+
+Untuk menjamin kualitas, skalabilitas, dan kemudahan pemeliharaan kode, seluruh proses pengembangan wajib mengacu pada praktik terbaik terkini seperti yang dijabarkan di bawah ini.
+
+### **1.1. Prinsip dan Praktik Terbaik Pengembangan**
+
+Bagian ini menegaskan standar teknologi dan metodologi yang harus diikuti dalam pengembangan setiap komponen Platform Cerdas.
+
+#### **Frontend: Cerdas Mobile (PWA)**
+
+1.  **Framework & Sintaks:**
+
+    - Pengembangan antarmuka PWA **wajib** mengikuti praktik terbaik terkini dari **Framework7-Vue**.
+    - Seluruh komponen Vue **wajib** menggunakan sintaks **`<script setup>`**. Pendekatan ini memastikan kode lebih ringkas, mudah dibaca, dan memaksimalkan fitur-fitur Vue 3 Composition API secara penuh. Penggunaan `Options API` tidak diperkenankan untuk komponen baru.
+
+2.  **Penamaan File:**
+
+    - Penamaan file komponen Vue harus mengikuti konvensi **`PascalCase`** (contoh: `ActivityDashboardPage.vue`, `AssignmentCard.vue`). Ini adalah standar komunitas yang meningkatkan keterbacaan dan konsistensi proyek.
+
+3.  **Manajemen Database Lokal (IndexedDB):**
+    - Interaksi dengan database IndexedDB di sisi klien **wajib** diimplementasikan menggunakan **Dexie.js versi terbaru**.
+    - Implementasi harus secara ketat mengikuti **praktik terbaik (best practice) dan cara terbaru** yang direkomendasikan oleh dokumentasi resmi Dexie.js dan komunitas pengembang. Ini mencakup, namun tidak terbatas pada, desain skema yang efisien, penggunaan transaksi (`transaction`) untuk menjamin integritas data, penanganan _versioning_ dan migrasi skema yang benar, serta penulisan _query_ yang optimal.
+    - Sebelum implementasi, pengembang **diwajibkan untuk selalu melakukan riset (Googling)** guna memastikan bahwa pola desain dan teknik yang digunakan adalah yang paling modern dan paling sesuai untuk aplikasi PWA dengan kapabilitas _offline-first_ yang kompleks.
+
+#### **Backend: Cerdas SM (Laravel)**
+
+1.  **Arsitektur & Pola Desain:**
+
+    - Pengembangan backend harus selaras dengan praktik terbaik terbaru dalam ekosistem **Laravel**.
+    - Logika bisnis yang kompleks harus diekstraksi dari _Controller_. Gunakan **_Service Classes_** atau **_Action Classes_** untuk menjaga agar _Controller_ tetap ramping dan fokus pada penanganan permintaan HTTP.
+
+2.  **Kualitas Kode & Konsistensi:**
+    - Manfaatkan fitur-fitur modern Laravel seperti **`Enum`** untuk status dan tipe data, serta deklarasi **`strict types`** (`declare(strict_types=1);`) untuk meningkatkan keandalan kode.
+    - Gunakan **`Eloquent API Resources`** untuk standardisasi dan transformasi data pada respons API, memastikan format output yang konsisten.
+    - Implementasikan validasi yang ketat dan eksplisit menggunakan **`Form Requests`** untuk setiap endpoint yang menerima input, guna menjamin integritas data sebelum masuk ke logika bisnis.
+
+## 2. Definisi Entitas dan Peran
+
+### 2.1. Entitas Organisasi & Proyek
+
+- **Satuan Kerja (Satker):** Entitas organisasi dasar (misalnya, BPS Kabupaten/Kota, BPS Provinsi). Bertindak sebagai "Tenant" atau unit kerja utama dalam sistem. Setiap pengguna terafiliasi dengan satu Satker induk.
+- **Kegiatan Statistik:** Proyek pengumpulan data (misalnya, "Sensus Pertanian 2026"). Sebuah kegiatan bersifat global dan dapat melibatkan banyak `Satker` sebagai pelaksana.
+- **Assignment:** Unit tugas terkecil yang diberikan kepada petugas lapangan, didefinisikan oleh **hierarki wilayah kerja berbasis level (hingga 6 level)**. Setiap assignment terikat pada satu `Kegiatan Statistik`, satu `PPL`, dan satu `PML`.
+- **Assignment Response:** Wadah untuk data yang dikumpulkan dari sebuah `Assignment`. Entitas ini memiliki siklus hidup yang dinamis, direpresentasikan oleh `status`, dan menjadi objek utama dalam alur kerja operasional.
+
+### 2.2. Alur Kerja Login dan Pendaftaran
+
+Sistem mendukung dua metode autentikasi: email/password tradisional dan Single Sign-On (SSO) melalui Google. Alur pendaftaran mandiri via Google diizinkan untuk mempermudah pengguna.
+
+#### **Alur 1: Pendaftaran Mandiri (Pengguna Baru via Google)**
+
+1.  Pengguna baru membuka halaman login dan memilih **"Login dengan Google"**.
+2.  Setelah autentikasi Google berhasil, backend menerima profil pengguna.
+3.  Backend memeriksa apakah `google_id` atau `email` sudah ada di database. Jika tidak ada, backend akan **membuat akun `User` baru**.
+4.  Akun baru ini akan memiliki `satker_id = NULL`, menjadikannya "Pengguna Mengambang" (_Floating User_).
+5.  Pengguna berhasil login tetapi akan melihat pesan bahwa mereka belum terafiliasi dengan Satker atau kegiatan manapun dan harus menghubungi administrator.
+
+#### **Alur 2: Penautan Otomatis (Pengguna Sudah Dibuat Admin)**
+
+1.  Seorang Admin telah membuat akun untuk PPL dengan `email` tertentu, namun PPL tersebut belum pernah login.
+2.  PPL memilih **"Login dengan Google"** menggunakan akun Google dengan email yang sama.
+3.  Backend mendeteksi bahwa `email` tersebut sudah ada tetapi `google_id`-nya masih kosong.
+4.  Backend secara otomatis **menautkan akun Google** tersebut dengan memperbarui kolom `google_id` pada record pengguna yang ada.
+5.  Login berhasil, dan pengguna langsung dapat mengakses kegiatannya.
+
+#### **Alur 3: Login Normal (Akun Sudah Tertaut)**
+
+1.  Pengguna yang sudah pernah login dengan Google sebelumnya mengklik **"Login dengan Google"**.
+2.  Backend menemukan `User` berdasarkan `google_id` yang cocok.
+3.  Login berhasil seketika.
+
+### 2.3. Peran Pengguna (Dikelola oleh Filament Shield)
+
+Peran bersifat kontekstual dan diberikan kepada pengguna dalam lingkup `Kegiatan Statistik` tertentu.
+
+#### **A. Pengguna Panel Filament (Peran Administratif)**
+
+- **`super_admin`**
+
+  - **Tanggung Jawab:** Mengelola keseluruhan sistem dan entitas tingkat tertinggi.
+  - **Kewenangan (via Filament):**
+    - Membuat, mengedit, dan menghapus `Satker`.
+    - Membuat, mengedit, dan menghapus `Kegiatan Statistik`, termasuk mendesain `form_schema` dan versinya.
+    - Menugaskan `Satker` pelaksana ke dalam sebuah `Kegiatan Statistik`.
+    - Membuat akun pengguna untuk `admin_satker`.
+
+- **`admin_satker`**
+
+  - **Tanggung Jawab:** Mengelola sumber daya manusia di dalam Satker-nya.
+  - **Kewenangan (via Filament, dalam lingkup Satker-nya):**
+    - Membuat, mengedit, dan menonaktifkan akun User (terutama untuk pengguna yang tidak menggunakan login Google atau perlu dibuatkan akun secara manual).
+
+- **`admin_kegiatan`**
+  - **Tanggung Jawab:** Mengelola pelaksanaan operasional sebuah `Kegiatan Statistik` di dalam Satker-nya.
+  - **Kewenangan (via Filament, dalam lingkup Kegiatan & Satker-nya):**
+    - **Merekrut Anggota Tim:** Mencari dan menambahkan `User` (berdasarkan email) dari seluruh sistem ke dalam kegiatan. Saat seorang pengguna direkrut, `satker_id` mereka akan diatur ke Satker milik Admin, dan mereka ditambahkan sebagai anggota kegiatan (`kegiatan_members`).
+    - Memberikan peran (`Roles`) `PML` dan `PPL` kepada anggota kegiatan menggunakan Filament Shield.
+    - Mengelola `Assignment`: Membuat, menugaskan, dan mengalihkan tugas (re-assign) PPL dan PML jika diperlukan selama periode lapangan.
+    - Memantau progres operasional: Memantau progres seluruh assignment melalui dasbor dan laporan generik (misalnya, jumlah berdasarkan status, kemajuan per petugas atau wilayah).
+    - Melakukan tindakan final (`Approve by Admin`, `Reject by Admin`) pada data yang sudah lolos dari siklus PPL-PML.
+
+#### **B. Pengguna PWA (Peran Lapangan/Operasional)**
+
+- **`PML (Petugas Pemeriksa Lapangan)`**
+
+  - **Tanggung Jawab:** Memeriksa dan memastikan kualitas data yang dikumpulkan oleh PPL yang berada di bawah pengawasannya, langsung melalui PWA.
+  - **Kewenangan (via PWA):**
+    - Melihat daftar PPL yang diawasinya dan progres mereka.
+    - Melihat daftar `Assignment` dari PPL-nya yang berstatus `Submitted by PPL` atau status lain yang relevan.
+    - Membuka `Assignment Response` dalam mode baca-saja atau mode edit terbatas (sesuai `form_schema`).
+    - Melakukan tindakan **Approve** atau **Reject** (dengan `notes` wajib diisi) langsung dari antarmuka PWA.
+
+- **`PPL (Petugas Pencacah Lapangan)`**
+  - **Tanggung Jawab:** Melakukan wawancara dan mengumpulkan data di lapangan sesuai `Assignment`.
+  - **Kewenangan (via PWA, hanya untuk assignment miliknya):**
+    - Mengunduh `Assignment` dan `form_schema` untuk kerja offline.
+    - Mengisi dan menyimpan data `Assignment Response` secara lokal.
+    - Melakukan **Submit** atas `Assignment Response` yang telah selesai.
+    - Melihat catatan penolakan dan memperbaiki data yang di-**Reject** oleh PML/Admin.
+
+## 3. Siklus Hidup Pengumpulan Data (Workflow End-to-End)
+
+Ini adalah alur kerja lengkap untuk satu `Assignment Response`, dari awal hingga akhir.
+
+### **Tahap 1: Persiapan (dilakukan di Filament oleh Admin)**
+
+1.  **Pembuatan Kegiatan & Formulir:** `super_admin` membuat `Kegiatan Statistik` baru dan mendesain `form_schema`-nya.
+2.  **Penugasan Satker:** `super_admin` menugaskan Satker-satker pelaksana ke dalam kegiatan tersebut.
+3.  **Manajemen Tim:** `admin_kegiatan` di setiap Satker pelaksana "merekrut" `User` ke dalam kegiatan dan memberikan peran `PML` atau `PPL` menggunakan Filament Shield.
+4.  **Pembuatan Assignment:** `admin_kegiatan` membuat `Assignment`, menautkannya ke PPL dan PML yang relevan. Proses ini sangat fleksibel untuk mendukung berbagai metodologi survei. - **Skenario A: Pembuatan Awal (Manual/Impor):** Untuk kegiatan yang tidak memiliki prelist (misalnya, Listing awal), Admin dapat membuat `Assignment` secara manual atau melalui fitur impor dari file CSV/Excel.
+
+- **Skenario B: Pembuatan dari Hasil Kegiatan Sebelumnya:** Sistem menyediakan fitur untuk men-generate `Assignment` berdasarkan hasil dari kegiatan lain. Ini adalah alur kerja standar untuk skenario seperti:
+
+  - **Listing → Pendataan:** `Assignment` untuk kegiatan "Pendataan" dibuat dari daftar responden yang valid dari `assignment_responses` kegiatan "Listing".
+  - **Pendataan → Post Enumeration Survey (PES):** `Assignment` untuk kegiatan "PES" dibuat dengan mengambil sampel (misalnya 5%) dari `Assignment` kegiatan "Pendataan" utama.
+
+- **Proses Pra-Isi Data:** Selama pembuatan `Assignment` (baik skenario A maupun B), sistem dapat mengisi kolom `prefilled_data`. Data ini (misalnya, nama kepala rumah tangga atau nama perusahaan) akan ditampilkan kepada PPL di PWA untuk membantu identifikasi responden di lapangan.
+
+Saat sebuah `Assignment` dibuat, `Assignment Response` baru juga dibuat secara otomatis dengan `status` awal **`Assigned`**.
+
+### **Tahap 2: Pengumpulan Data oleh PPL (dilakukan di PWA)**
+
+1.  **Persiapan & Pengunduhan Awal Kegiatan (Per-Kegiatan):** Setelah PPL memilih sebuah kegiatan dari halaman beranda PWA, aplikasi akan memulai proses persiapan untuk kerja offline:
+    a. **Pengecekan Lokal:** Aplikasi memeriksa apakah data inti untuk kegiatan ini sudah ada di IndexedDB.
+    b. **Unduh Data Inti:** Jika belum ada, PWA memanggil endpoint `initial-data/{activityId}` untuk mengunduh `Assignment` yang ditugaskan, `form_schema` versi terbaru, dan data relevan lainnya.
+    c. **Identifikasi & Unduh Master Data:** PWA mem-parsing properti `masters_used` di `form_schema` dan mengunduh semua master data yang diperlukan.
+    d. **Simpan ke Lokal:** Semua data disimpan ke IndexedDB. UI harus menampilkan progres yang jelas selama proses ini.
+
+2.  **Mulai Bekerja:** PPL membuka sebuah assignment. Status `Assignment Response` di PWA secara internal dapat dianggap **`Opened`**.
+
+3.  **Pengisian Data (Offline):** PPL mengisi formulir. Setiap perubahan data disimpan secara otomatis ke IndexedDB (auto-save).
+
+    - **Catatan Penting:** Data dari `prefilled_data` (misalnya, nama kepala rumah tangga) akan ditampilkan sebagai informasi referensi yang **bersifat read-only**. Jika PPL perlu mengoreksi data ini, ia akan mengisinya di field kuesioner yang sesuai, yang kemudian akan disimpan di dalam objek `responses`.
+
+4.  **Submit:** Setelah selesai, PPL menekan tombol "Submit".
+    - Di PWA, status `Assignment Response` diubah menjadi **`Submitted by PPL`**.
+    - Antarmuka formulir untuk assignment tersebut menjadi **terkunci (read-only)** bagi PPL.
+    - Aksi "submit" ini beserta seluruh datanya dimasukkan ke dalam antrean sinkronisasi (`sync_queue`).
+5.  **Sinkronisasi ke Server:** Saat perangkat PPL online, `SyncEngine` mengirimkan data ke server. Server memvalidasi data, memastikan PPL memiliki izin, dan memperbarui `status` di database menjadi **`Submitted by PPL`**.
+
+### **Tahap 3: Pemeriksaan oleh PML (dilakukan di PWA)**
+
+1.  **Sinkronisasi PML:** PML login ke PWA. Aplikasi memanggil endpoint `initial-data` (yang disesuaikan untuk PML) dan mengunduh `Assignment` dari semua PPL yang diawasinya, terutama yang memerlukan tindakan (misalnya, berstatus `Submitted by PPL`).
+2.  **Dasbor Pemeriksaan:** Antarmuka PWA untuk PML menampilkan daftar tugas pemeriksaan, dikelompokkan berdasarkan PPL atau status.
+3.  **Proses Review:** PML memilih sebuah assignment untuk diperiksa. PWA menampilkan data `Assignment Response` yang telah diisi PPL. Tergantung `form_schema`, beberapa field mungkin bisa diedit oleh PML, sementara yang lain bersifat read-only.
+4.  **Keputusan Pemeriksaan:**
+
+- **Prasyarat - Pengecekan Aksi Online:** Sebelum menampilkan tombol "Approve" atau "Reject", PWA **wajib** melakukan panggilan ke API server (misalnya, `GET /api/assignments/{id}/allowed-actions`). Panggilan ini bertujuan untuk mengkonfirmasi aksi apa yang diizinkan oleh sistem pada saat itu. Jika perangkat PML sedang offline, tombol-tombol aksi ini akan dinonaktifkan atau disembunyikan.
+- **Skenario A: Approve (Data Diterima):**
+  - PML menekan tombol "Approve".
+  - Di PWA, status `Assignment Response` diubah menjadi **`Approved by PML`**.
+  - Aksi "approve" ini (berisi `assignment_id`, `status` baru, dan `version`) dimasukkan ke dalam `sync_queue` PML.
+- **Skenario B: Reject (Data Ditolak):**
+  - PML menekan tombol "Reject".
+  - PWA menampilkan modal yang **mewajibkan** PML untuk mengisi alasan penolakan (`notes`).
+  - Di PWA, status `Assignment Response` diubah menjadi **`Rejected by PML`** dan `notes` disimpan.
+  - Aksi "reject" ini dimasukkan ke dalam `sync_queue` PML.
+
+5.  **Sinkronisasi Keputusan:** Saat perangkat PML online, `SyncEngine` mengirimkan keputusan (approve/reject) ke server. Server memvalidasi (memastikan PML berwenang) dan memperbarui `status` di database.
+
+### **Tahap 4: Siklus Perbaikan (interaksi PWA-ke-PWA)**
+
+1.  **Pemberitahuan ke PPL:** Saat PPL melakukan sinkronisasi berikutnya, PWA-nya akan mengunduh pembaruan status dari server.
+2.  **Membuka Kembali Form:** PWA mendeteksi `status` **`Rejected by PML`** (atau `Rejected by Admin`) untuk salah satu assignment-nya.
+3.  **Pembukaan Kunci:** Antarmuka formulir untuk assignment tersebut **dibuka kembali (unlocked)**, memungkinkan PPL untuk mengedit.
+4.  **Tampilan Catatan:** Alasan penolakan yang dikirim PML ditampilkan dengan jelas kepada PPL.
+5.  **Perbaikan oleh PPL:** PPL memperbaiki data sesuai catatan.
+6.  **Submit Ulang:** PPL menekan "Submit" lagi. Proses kembali ke **Tahap 2, Langkah 4**, dan siklus pemeriksaan oleh PML (Tahap 3) akan berulang.
+
+### **Tahap 5: Finalisasi (dilakukan di Filament oleh Admin Kegiatan)**
+
+1.  **Pemantauan Akhir:** `admin_kegiatan` memantau di panel Filament daftar `Assignment Response` yang telah mencapai status `Approved by PML`.
+2.  **Keputusan Final:**
+    - **Approve Final:** Admin Kegiatan menyetujui data, mengubah `status` menjadi **`Approved by Admin`**. Ini adalah status akhir, menandakan data telah diverifikasi dan bersih.
+    - **Reject Final:** Jika Admin Kegiatan menemukan kesalahan krusial, ia dapat melakukan **Reject**. Status berubah menjadi **`Rejected by Admin`**. Data ini akan kembali ke PPL untuk diperbaiki, mengulangi siklus dari Tahap 4.
+3.  **Edit Pasca-Periode:** Sesuai `permission`, jika periode pendataan telah berakhir, `admin_kegiatan` dapat langsung mengedit data di Filament untuk pembersihan akhir tanpa mengembalikannya ke PPL.
+
+## 4. Penanganan Perubahan Versi Formulir
+
+Sistem dirancang untuk menangani pembaruan `form_schema` yang mungkin terjadi di tengah periode pengumpulan data.
+
+1.  **Deteksi Versi:** Setiap kali PPL membuka assignment yang dapat diedit di PWA, aplikasi akan membandingkan `form_version_used` yang tersimpan dengan versi terbaru yang tersedia.
+2.  **Skenario Pembaruan:**
+    - **Data Baru/Kosong:** PWA akan selalu menggunakan `form_schema` versi terbaru.
+    - **Data Dikembalikan (`Rejected`):** PWA akan memuat data yang ada tetapi merender formulir menggunakan `form_schema` versi terbaru. UI akan memberitahu PPL bahwa ada pembaruan pada formulir.
+3.  **Fleksibilitas Lapangan:** Mengingat PPL mungkin berada di lokasi terpencil, sistem bersifat permisif. Jika PPL tidak dapat memperoleh data untuk pertanyaan baru yang ditambahkan di skema versi baru, PPL tetap dapat mengirimkan ulang data. Saat dikirim, `form_version_used` yang dicatat adalah versi lama, menandakan bahwa data tersebut diisi berdasarkan skema sebelumnya. Ini menjadi penanda bagi `admin_kegiatan` untuk melakukan verifikasi atau pembersihan data di tahap akhir.
+
+## 5. Resolusi Konflik Sinkronisasi
+
+Meskipun `admin_kegiatan` tidak dapat mengedit data selama periode pengumpulan data, sistem tetap menerapkan mekanisme _Optimistic Locking_ menggunakan kolom `version` pada `assignment_responses` untuk mencegah _lost updates_.
+
+1.  **Mekanisme:** Setiap pembaruan data yang dikirim ke server harus menyertakan nomor `version` yang dimiliki oleh PWA.
+2.  **Validasi Server:** Server akan membandingkan `version` yang masuk dengan `version` di database.
+    - **Versi Cocok:** Pembaruan diterima, dan server akan menaikkan nomor `version`-nya.
+    - **Versi Tidak Cocok (Konflik):** Pembaruan ditolak dengan error `409 Conflict`.
+3.  **Penanganan di PWA:** Jika PWA menerima error `409`, ini menandakan data di server lebih baru. PWA akan menghentikan proses kirim, mengunduh data terbaru dari server, dan memberitahu pengguna. Ini memastikan tidak ada data yang tertimpa secara tidak sengaja, misalnya saat sinkronisasi dari dua perangkat yang berbeda.
+
+## 6. Strategi Sinkronisasi Data (PWA)
+
+Sistem PWA mengadopsi model sinkronisasi yang canggih untuk memberikan fleksibilitas dan kontrol kepada pengguna, sekaligus memastikan integritas data. Ada tiga proses utama yang perlu dibedakan:
+
+### 6.1. Upload Perubahan Lokal (Proses Latar Belakang Otomatis)
+
+Proses ini bertanggung jawab untuk **mengirim** data dari PWA ke server.
+
+- **Pemicu:** Proses ini berjalan secara otomatis di latar belakang oleh `SyncEngine` setiap kali perangkat online.
+- **Apa yang Dikirim:** `SyncEngine` akan memproses antrean (`sync_queue`) yang berisi semua aksi yang dilakukan pengguna secara offline, seperti:
+  - Data kuesioner dari `Assignment` yang baru saja di-**Submit** oleh PPL.
+  - Keputusan `Approve` atau `Reject` yang dilakukan oleh PML.
+- **Tujuan:** Memastikan semua pekerjaan yang telah diselesaikan di lapangan terkirim ke server pusat tanpa perlu intervensi manual dari pengguna.
+
+### 6.2. Sync Perubahan Assignment (Aksi Pengguna - Delta Download)
+
+Ini adalah mode sinkronisasi utama yang akan sering digunakan oleh PPL dan PML untuk **mengunduh** pembaruan dari server.
+
+- **Pemicu:** Aksi ini dipicu secara manual oleh pengguna melalui tombol "Sync Perubahan Assignment" di dasbor kegiatan.
+- **Apa yang Diunduh:** PWA akan meminta semua perubahan yang terjadi di server sejak sinkronisasi terakhir. Ini mencakup:
+  - **Assignment baru** yang ditugaskan kepada pengguna.
+  - **Perubahan status** pada assignment yang ada (misalnya, dari `Submitted by PPL` menjadi `Rejected by PML`).
+  - **Perubahan isian kuesioner** yang mungkin dilakukan oleh PML atau Admin (jika diizinkan oleh alur kerja).
+- **Tujuan:** Memperbarui PWA dengan data terbaru dari server secara efisien, tanpa mengunduh ulang seluruh dataset. Hemat waktu dan kuota data.
+
+### 6.3. Sync Full Assignment (Aksi Pengguna - Overwrite Download)
+
+Ini adalah mode sinkronisasi "darurat" atau "reset" yang digunakan dalam skenario khusus.
+
+- **Pemicu:** Aksi ini dipicu secara manual oleh pengguna melalui tombol "Sync Full Assignment", yang akan menampilkan dialog konfirmasi tegas.
+- **Apa yang Terjadi:**
+  1.  PWA akan menghapus semua data `Assignment` dan `Assignment Response` untuk kegiatan yang sedang aktif dari database lokal (IndexedDB).
+  2.  PWA kemudian akan mengunduh ulang **seluruh** daftar assignment dan isiannya dari server, seolah-olah ini adalah pertama kalinya pengguna mempersiapkan kegiatan tersebut.
+- **Tujuan:** Menyelesaikan masalah data yang mungkin rusak atau tidak sinkron di PWA dengan cara menimpanya dengan versi data yang "pasti benar" dari server.
+
+
+--- END OF FILE: spec\alur-kerja.md ---
+
+
+
+========================================================================
+## FILE: spec\db.md
+========================================================================
+
+### **Spesifikasi Desain Database Lengkap (Versi Final)**
+
+## 1. Ringkasan Eksekutif
+
+Dokumen ini mendefinisikan struktur skema database lengkap untuk backend **Cerdas-SM (Survei Management)**, yang merupakan inti dari **Platform Cerdas**. Arsitektur ini dirancang untuk mendukung alur kerja multi-peran dalam lingkungan multi-tenant yang kompleks, di mana **`Satuan Kerja (Satker)`** berfungsi sebagai Tenant utama. Desain ini secara native mendukung kegiatan statistik berskala nasional yang melibatkan banyak Satker pelaksana.
+
+Spesifikasi ini sepenuhnya terintegrasi dan dioptimalkan untuk:
+
+- **Laravel 11+** sebagai kerangka kerja backend.
+- **Filament v4** sebagai panel administrasi khusus peran administratif.
+- **Filament Tenancy** untuk isolasi data yang ketat berbasis `Satker`.
+- **`bezhanSalleh/filament-shield` v4** untuk manajemen peran dan izin yang dinamis dan kontekstual.
+
+## 2. `app/Constants.php`
+
+Sebuah kelas pusat untuk semua enum dan konstanta digunakan untuk memastikan konsistensi kode dan mencegah _magic strings_.
+
+```php
+<?php
+
+namespace App;
+
+class Constants
+{
+    // Nama Default untuk Roles (dikelola oleh Filament Shield)
+    public const ROLE_SUPER_ADMIN = 'super_admin';
+    public const ROLE_ADMIN_SATKER = 'admin_satker';
+    public const ROLE_ADMIN_KEGIATAN = 'admin_kegiatan';
+    public const ROLE_PML = 'PML';
+    public const ROLE_PPL = 'PPL';
+
+    // Status untuk Assignment Response
+    public const STATUS_ASSIGNED = 'Assigned';
+    public const STATUS_OPENED = 'Opened';
+    public const STATUS_SUBMITTED_PPL = 'Submitted by PPL';
+    public const STATUS_REJECTED_PML = 'Rejected by PML';
+    public const STATUS_REJECTED_ADMIN = 'Rejected by Admin';
+    public const STATUS_APPROVED_PML = 'Approved by PML';
+    public const STATUS_APPROVED_ADMIN = 'Approved by Admin';
+
+    public static function getResponseStatuses(): array
+    {
+        return [
+            self::STATUS_ASSIGNED,
+            self::STATUS_OPENED,
+            self::STATUS_SUBMITTED_PPL,
+            self::STATUS_REJECTED_PML,
+            self::STATUS_REJECTED_ADMIN,
+            self::STATUS_APPROVED_PML,
+            self::STATUS_APPROVED_ADMIN,
+        ];
+    }
+}
+```
+
+## 3. Skema Tabel Database
+
+### 3.1. Tabel Tenancy, Pengguna, dan Peran
+
+#### **`satkers` (Model Tenant)**
+
+- **Model:** `App\Models\Satker`
+- **Tujuan:** Menyimpan data Satuan Kerja. Bertindak sebagai Tenant utama dalam sistem.
+- **Traits/Interfaces:** (Tidak ada, konfigurasi dilakukan di Panel Provider)
+- **Columns:**
+
+| Nama Kolom   | Tipe Data    | Kendala & Catatan                                     |
+| :----------- | :----------- | :---------------------------------------------------- |
+| `id`         | `uuid`       | Primary Key                                           |
+| `name`       | `string`     | Nama lengkap Satker (e.g., "BPS Provinsi Jawa Barat") |
+| `code`       | `string`     | Kode unik untuk Satker                                |
+| `timestamps` | `timestamps` |                                                       |
+
+#### **`users`**
+
+- **Model:** `App\Models\User`
+- **Tujuan:** Menyimpan akun pengguna individu. Setiap pengguna terafiliasi dengan satu Satker "induk".
+- **Traits/Interfaces:** `use Spatie\Permission\Traits\HasRoles`
+- **Columns:**
+
+| Nama Kolom      | Tipe Data     | Kendala & Catatan                                                                                           |
+| :-------------- | :------------ | :---------------------------------------------------------------------------------------------------------- |
+| `id`            | `uuid`        | Primary Key                                                                                                 |
+| `satker_id`     | `foreignUuid` | **`nullable`**. Terikat ke `satkers.id`. **Null untuk pengguna yang mendaftar mandiri dan belum direkrut.** |
+| `name`          | `string`      | Nama lengkap pengguna.                                                                                      |
+| `email`         | `string`      | `unique`.                                                                                                   |
+| `password`      | `string`      | **`nullable`**. Menjadi null jika pengguna hanya login via Google.                                          |
+| `google_id`     | `string`      | **`nullable`**, **`unique`**. ID unik dari provider OAuth (Google).                                         |
+| `google_avatar` | `string`      | **`nullable`**. URL ke gambar avatar pengguna.                                                              |
+| `timestamps`    | `timestamps`  |                                                                                                             |
+
+> **Catatan Konseptual - Pengguna Mengambang (Floating Users):**
+> Seorang `User` dapat ada di sistem dengan `satker_id` bernilai `NULL`. Ini terjadi ketika pengguna mendaftar mandiri melalui Google tetapi belum "direkrut" oleh admin_satker/Kegiatan manapun. Pengguna ini dapat login tetapi tidak memiliki akses ke data operasional apapun sampai mereka terafiliasi dengan sebuah Satker.
+
+#### **Tabel yang Dibuat oleh `bezhanSalleh/filament-shield`**
+
+- **Tabel:** `roles`, `permissions`, `model_has_roles`, `model_has_permissions`, `role_has_permissions`
+- **Tujuan:** Dikelola sepenuhnya oleh paket Spatie/Shield untuk menangani sistem peran dan izin. Tidak perlu dibuat atau dimodifikasi secara manual.
+
+### 3.2. Tabel Kegiatan & Keanggotaan
+
+#### **`kegiatan_statistiks`**
+
+- **Model:** `App\Models\KegiatanStatistik`
+- **Tujuan:** Entitas global yang mendefinisikan sebuah proyek survei. Tidak terikat pada satu tenant, memungkinkan kegiatan berskala nasional.
+- **Columns:**
+
+| Nama Kolom          | Tipe Data    | Kendala & Catatan                                                      |
+| :------------------ | :----------- | :--------------------------------------------------------------------- |
+| `id`                | `uuid`       | Primary Key                                                            |
+| `name`              | `string`     | Nama kegiatan (e.g., "Sensus Ekonomi 2026")                            |
+| `year`              | `year`       | Tahun pelaksanaan                                                      |
+| `start_date`        | `date`       | Tanggal mulai periode pendataan                                        |
+| `end_date`          | `date`       | Tanggal selesai periode pendataan                                      |
+| `extended_end_date` | `date`       | `nullable`                                                             |
+| `form_schema`       | `json`       | Definisi lengkap formulir, termasuk validasi dan metadata `editableBy` |
+| `form_version`      | `integer`    | `default(1)`. Dinaikkan setiap `form_schema` diperbarui                |
+| `timestamps`        | `timestamps` |                                                                        |
+
+#### Kendala & Catatan Tambahan:
+
+#### Kendala & Catatan Tambahan:
+
+Definisi lengkap formulir `form_schema`. **Skema ini juga harus berisi properti `masters_used` yang mendeklarasikan semua master data yang dibutuhkan oleh formulir ini**, menunjuk ke `type` dan `version` dari tabel `master_data`.
+
+Selain itu, skema ini juga akan menyimpan konfigurasi untuk tampilan PWA agar sepenuhnya data-driven.
+
+Contoh:
+
+```json
+{
+  "masters_used": [
+    { "type": "KBLI", "version": 2020 },
+    { "type": "WILAYAH_INDONESIA", "version": 1 }
+  ],
+  "level_definitions": {
+    "level_1_code": "Provinsi",
+    "level_2_code": "Kabupaten/Kota",
+    "level_3_code": "Kecamatan",
+    "level_4_code": "Desa/Kelurahan",
+    "level_5_code": "SLS",
+    "level_6_code": "Sub-SLS"
+  },
+  "assignment_table_grouping_levels": [
+    "level_5_code",
+    "level_4_code",
+    "level_3_code",
+    "level_2_code"
+  ],
+  "assignment_table_columns": [
+    { "key": "prefilled.nama_krt", "label": "Kepala Rumah Tangga" },
+    { "key": "prefilled.alamat", "label": "Alamat" },
+    { "key": "status", "label": "Status Terakhir" }
+  ],
+  "pages": [ ... ]
+}
+```
+
+#### **`kegiatan_satkers` (Pivot)**
+
+- **Model:** `App\Models\KegiatanSatker`
+- **Tujuan:** Menghubungkan Kegiatan Statistik dengan Satker yang berpartisipasi (relasi many-to-many). Ini adalah dasar dari arsitektur multi-satker.
+- **Columns:**
+
+| Nama Kolom              | Tipe Data       | Kendala & Catatan                                      |
+| :---------------------- | :-------------- | :----------------------------------------------------- |
+| `id`                    | `bigIncrements` | Primary Key                                            |
+| `kegiatan_statistik_id` | `foreignUuid`   | Terikat ke `kegiatan_statistiks.id`, `cascadeOnDelete` |
+| `satker_id`             | `foreignUuid`   | Terikat ke `satkers.id`, `cascadeOnDelete`             |
+| `timestamps`            | `timestamps`    |                                                        |
+
+#### **`kegiatan_members` (Pivot)**
+
+- **Model:** `App\Models\KegiatanMember`
+- **Tujuan:** Menandakan partisipasi seorang pengguna dalam sebuah kegiatan. Peran (role) pengguna untuk kegiatan ini dikelola oleh Shield, bukan disimpan di sini.
+- **Columns:**
+
+| Nama Kolom              | Tipe Data       | Kendala & Catatan                                      |
+| :---------------------- | :-------------- | :----------------------------------------------------- |
+| `id`                    | `bigIncrements` | Primary Key                                            |
+| `kegiatan_statistik_id` | `foreignUuid`   | Terikat ke `kegiatan_statistiks.id`, `cascadeOnDelete` |
+| `user_id`               | `foreignUuid`   | Terikat ke `users.id`, `cascadeOnDelete`               |
+| `timestamps`            | `timestamps`    |                                                        |
+
+### **3.3. Konsep Kode Wilayah Berbasis Level (Konteks Penting)**
+
+Untuk memastikan fleksibilitas sistem dalam menangani berbagai jenis survei (misalnya, survei rumah tangga, survei perusahaan, dll.), desain ini mengadopsi pendekatan abstrak untuk pengkodean wilayah. Alih-alih menggunakan nama kolom yang kaku seperti `province_code` atau `block_census_code`, sistem menggunakan hierarki generik: `level_1_code` hingga `level_6_code`.
+
+- **Tujuan**: Untuk melepaskan keterikatan skema database dari struktur administrasi pemerintahan tertentu.
+- **Konteks Umum**:
+  - `level_1_code`: Biasanya merepresentasikan level tertinggi (e.g., Provinsi).
+  - `level_2_code`: Level di bawahnya (e.g., Kabupaten/Kota).
+  - `level_3_code`: Level di bawahnya (e.g., Kecamatan).
+  - `level_4_code`: Level di bawahnya (e.g., Desa/Kelurahan).
+  - `level_5_code`: Level unit pencacahan dasar (e.g., Satuan Lingkungan Setempat/SLS, Blok Sensus).
+  - `level_6_code`: Level sub-unit dari level 5 (e.g., Sub-SLS, Sub-Blok Sensus).
+- **Fleksibilitas**: Untuk survei yang tidak mengikuti struktur ini (misalnya, survei perusahaan di kawasan industri), level-level ini dapat dipetakan ke konsep yang berbeda tanpa mengubah skema database.
+- **Sumber Data:** Validasi dan pemetaan kode ke nama wilayah dilakukan dengan merujuk pada tabel **`master_sls`**.
+- **Fleksibilitas:**
+  - Kolom `level_1_code` hingga `level_4_code` bersifat `nullable` untuk mengakomodasi penugasan yang tidak terikat lokasi administratif secara ketat.
+  - Untuk unit pencacahan non-tradisional seperti **petak lahan pertanian**, `level_5_code` dan `level_6_code` dapat digunakan untuk menyimpan ID unik petak, sementara level di atasnya tetap diisi sesuai lokasi administratif lahan tersebut.
+
+### 3.4. Tabel Data Operasional
+
+#### **`assignments`**
+
+- **Model:** `App\Models\Assignment`
+- **Tujuan:** Tugas spesifik yang diberikan kepada PPL, di bawah pengawasan PML. Didefinisikan oleh hierarki wilayah kerja berbasis level.
+- **Traits/Interfaces:** (Tidak ada, scoping ditangani otomatis oleh Filament)
+- **Columns:**
+
+| Nama Kolom              | Tipe Data     | Kendala & Catatan                                                                                          |
+| :---------------------- | :------------ | :--------------------------------------------------------------------------------------------------------- |
+| `id`                    | `uuid`        | Primary Key. Dihasilkan oleh klien (PWA) atau server.                                                      |
+| `satker_id`             | `foreignUuid` | Terikat ke `satkers.id`.                                                                                   |
+| `kegiatan_statistik_id` | `foreignUuid` | Terikat ke `kegiatan_statistiks.id`                                                                        |
+| `ppl_id`                | `foreignUuid` | Terikat ke `users.id`.                                                                                     |
+| `pml_id`                | `foreignUuid` | Terikat ke `users.id`.                                                                                     |
+| `level_1_code`          | `string`      | `nullable`. Kode wilayah Level 1.                                                                          |
+| `level_2_code`          | `string`      | `nullable`. Kode wilayah Level 2.                                                                          |
+| `level_3_code`          | `string`      | `nullable`. Kode wilayah Level 3.                                                                          |
+| `level_4_code`          | `string`      | `nullable`. Kode wilayah Level 4.                                                                          |
+| `level_5_code`          | `string`      | `nullable`. Kode wilayah Level 5.                                                                          |
+| `level_6_code`          | `string`      | `nullable`. Kode wilayah Level 6.                                                                          |
+| `assignment_label`      | `string`      | Nama/label tugas yang mudah dibaca (e.g., "Rumah Tangga Budi", "PT Maju Jaya").                            |
+| `prefilled_data`        | `json`        | `nullable`. Data pra-isi untuk diverifikasi/digunakan oleh petugas (e.g., `{"nama_krt": "Budi Santoso"}`). |
+| `level_4_code_full`     | `string`      | `indexed`. Konkatenasi dari level 1-4. Untuk optimasi query/join.                                          |
+| `level_6_code_full`     | `string`      | `nullable`, `indexed`. Konkatenasi dari level 1-6. Untuk optimasi query/join.                              |
+| `timestamps`            | `timestamps`  |                                                                                                            |
+
+- **Aturan Validasi Penting (Application-Level):**
+- Saat membuat atau mengubah `Assignment`, sistem **wajib** memvalidasi bahwa `User` yang di-set sebagai `ppl_id` dan `pml_id` memiliki `satker_id` yang sama dengan `satker_id` dari `Assignment` itu sendiri.
+- Saat membuat atau mengubah `Assignment`, sistem **wajib** melakukan validasi cakupan wilayah:
+  1. Ambil `satker_id` dari `admin_kegiatan` yang sedang melakukan aksi.
+  2. Ambil semua `wilayah_code_prefix` yang terasosiasi dengan `satker_id` tersebut dari tabel `satker_wilayah_tugas`.
+  3. Pastikan `level_X_code_full` dari `Assignment` yang baru diawali dengan salah satu dari prefix yang diizinkan. Jika tidak, proses harus ditolak dengan pesan error.
+
+#### **`assignment_attachments` (Baru)**
+
+- **Model:** `App\Models\AssignmentAttachment`
+- **Tujuan:** Menyimpan metadata untuk setiap file (foto, dokumen, dll.) yang diunggah dan terkait dengan sebuah assignment.
+- **Columns:**
+
+| Nama Kolom          | Tipe Data     | Kendala & Catatan                                          |
+| :------------------ | :------------ | :--------------------------------------------------------- |
+| `id`                | `uuid`        | Primary Key.                                               |
+| `assignment_id`     | `foreignUuid` | Terikat ke `assignments.id`, `cascadeOnDelete`.            |
+| `original_filename` | `string`      | Nama file asli saat diunggah oleh pengguna.                |
+| `stored_path`       | `string`      | Path atau key unik file di layanan penyimpanan (e.g., S3). |
+| `mime_type`         | `string`      | Tipe MIME dari file (e.g., 'image/jpeg').                  |
+| `file_size_bytes`   | `integer`     | Ukuran file dalam bytes.                                   |
+| `timestamps`        | `timestamps`  |                                                            |
+
+#### **`assignment_responses`**
+
+- **Model:** `App\Models\AssignmentResponse`
+- **Tujuan:** Menyimpan data hasil wawancara yang dikumpulkan oleh PPL. Ini adalah entitas transaksional utama.
+- **Columns:**
+
+| Nama Kolom             | Tipe Data    | Kendala & Catatan                                                                             |
+| :--------------------- | :----------- | :-------------------------------------------------------------------------------------------- |
+| `assignment_id`        | `uuid`       | **Primary Key**. Sekaligus Foreign Key ke `assignments.id`, `cascadeOnDelete`.                |
+| `status`               | `enum`       | Menggunakan nilai dari `Constants::getResponseStatuses()`                                     |
+| `version`              | `integer`    | `default(1)`. Untuk _optimistic locking_ dengan PWA. Wajib diinkrementasi pada setiap update. |
+| `form_version_used`    | `integer`    | Menyimpan versi form saat data diisi untuk keterlacakan.                                      |
+| `responses`            | `json`       | `nullable`. Jawaban dari form dalam format `{"questionId": "answer"}`.                        |
+| `submitted_by_ppl_at`  | `timestamp`  | `nullable`                                                                                    |
+| `reviewed_by_pml_at`   | `timestamp`  | `nullable`                                                                                    |
+| `reviewed_by_admin_at` | `timestamp`  | `nullable`                                                                                    |
+| `timestamps`           | `timestamps` |                                                                                               |
+
+#### **`response_histories` (Audit Trail)**
+
+- **Model:** `App\Models\ResponseHistory`
+- **Tujuan:** Mencatat setiap perubahan status pada `assignment_responses` untuk keterlacakan penuh dan akuntabilitas.
+- **Columns:**
+
+| Nama Kolom               | Tipe Data       | Kendala & Catatan                                                  |
+| :----------------------- | :-------------- | :----------------------------------------------------------------- |
+| `id`                     | `bigIncrements` | Primary Key                                                        |
+| `assignment_response_id` | `foreignUuid`   | Terikat ke `assignment_responses.assignment_id`, `cascadeOnDelete` |
+| `user_id`                | `foreignUuid`   | Terikat ke `users.id`. Pengguna yang melakukan aksi.               |
+| `from_status`            | `string`        | `nullable`                                                         |
+| `to_status`              | `string`        |                                                                    |
+| `notes`                  | `text`          | `nullable`. Wajib diisi saat status adalah `Rejected...`.          |
+| `created_at`             | `timestamp`     |                                                                    |
+
+#### **`app_metadata` (Baru)**
+
+- **Model:** (Tidak memerlukan model Eloquent, dikelola oleh PWA)
+- **Tujuan:** Menyimpan data konfigurasi atau metadata sisi klien dalam format key-value yang persisten di IndexedDB. Contohnya, menyimpan timestamp sinkronisasi terakhir per kegiatan.
+- **Columns:**
+
+| Nama Kolom | Tipe Data | Kendala & Catatan                                     |
+| :--------- | :-------- | :---------------------------------------------------- |
+| `key`      | `string`  | Primary Key. Contoh: `lastSyncTimestamp_kegiatan_123` |
+| `value`    | `any`     | Nilai yang disimpan (bisa string, number, object).    |
+
+#### **`master_sls`**
+
+- **Model:** `App\Models\MasterSls`
+- **Tujuan:** Menyimpan data master hierarki wilayah administratif dari level provinsi hingga SLS/Sub-SLS. Tabel ini berfungsi sebagai sumber kebenaran (source of truth) untuk validasi kode wilayah dan menampilkan nama wilayah di antarmuka.
+- **Columns:**
+
+| Nama Kolom    | Tipe Data       | Kendala & Catatan   |
+| :------------ | :-------------- | :------------------ |
+| `id`          | `bigIncrements` | Primary Key         |
+| `prov_id`     | `string`        | Kode Provinsi       |
+| `kabkot_id`   | `string`        | Kode Kabupaten/Kota |
+| `kec_id`      | `string`        | Kode Kecamatan      |
+| `desa_kel_id` | `string`        | Kode Desa/Kelurahan |
+| `sls_id`      | `string`        | Kode SLS/Sub-SLS    |
+| `provinsi`    | `string`        | Nama Provinsi       |
+| `kabkot`      | `string`        | Nama Kabupaten/Kota |
+| `kecamatan`   | `string`        | Nama Kecamatan      |
+| `desa_kel`    | `string`        | Nama Desa/Kelurahan |
+| `nama`        | `string`        | Nama SLS/Sub-SLS    |
+| `timestamps`  | `timestamps`    |                     |
+
+#### **`master_data` (Final)**
+
+- **Model:** `App\Models\MasterData`
+- **Tujuan:** Berfungsi sebagai _document store_ untuk mengelola dataset master yang besar dan kompleks (seperti KBLI) sebagai satu unit yang utuh dan berversi. Pendekatan ini memprioritaskan kesederhanaan manajemen dan integritas dataset. **Seluruh logika pencarian dan pemfilteran pada data ini terjadi di sisi klien (PWA).**
+- **Columns:**
+
+| Nama Kolom    | Tipe Data        | Kendala & Catatan                                                                             |
+| :------------ | :--------------- | :-------------------------------------------------------------------------------------------- |
+| `id`          | `bigIncreaments` | Primary Key                                                                                   |
+| `type`        | `string`         | Tipe/kategori master data (e.g., 'KBLI', 'WILAYAH_INDONESIA').                                |
+| `version`     | `integer`        | Versi dari master data ini (e.g., 2020).                                                      |
+| `description` | `string`         | `nullable`. Deskripsi singkat (e.g., "Klasifikasi Baku Lapangan Usaha Indonesia 2020").       |
+| `data`        | `json`           | **Penting.** Seluruh dataset master dalam format JSON yang berisi struktur hierarkis lengkap. |
+| `is_active`   | `boolean`        | `default(true)`. Menandakan apakah versi ini yang aktif digunakan untuk `type` ini.           |
+| `timestamps`  | `timestamps`     |                                                                                               |
+
+- **Kendala Unik (Unique Constraint):** Kombinasi `(type, version)` harus unik untuk memastikan tidak ada duplikasi versi pada tipe master data yang sama.
+
+#### **`satker_wilayah_tugas` (BARU)**
+
+- **Model:** `App\Models\SatkerWilayahTugas`
+- **Tujuan:** Memetakan setiap Satker ke satu atau lebih prefix kode wilayah yang menjadi tanggung jawabnya. Ini adalah tabel aturan bisnis inti untuk validasi cakupan wilayah.
+- **Columns:**
+
+  | Nama Kolom            | Tipe Data       | Kendala & Catatan                                                               |
+  | :-------------------- | :-------------- | :------------------------------------------------------------------------------ |
+  | `id`                  | `bigIncrements` | Primary Key                                                                     |
+  | `satker_id`           | `foreignUuid`   | Terikat ke `satkers.id`, `cascadeOnDelete`.                                     |
+  | `wilayah_level`       | `integer`       | Level wilayah yang menjadi basis (1=Prov, 2=Kab/Kota, 3=Kec, dst.).             |
+  | `wilayah_code_prefix` | `string`        | Prefix kode wilayah. Contoh: '61' untuk Prov Kalbar, '6102' untuk Kab Mempawah. |
+  | `timestamps`          | `timestamps`    |                                                                                 |
+
+**Contoh Isi Tabel `satker_wilayah_tugas`:**
+
+| satker_id                 | wilayah_level | wilayah_code_prefix | Deskripsi                                                                              |
+| :------------------------ | :------------ | :------------------ | :------------------------------------------------------------------------------------- |
+| (ID Satker Kab. Mempawah) | 2             | `6102`              | Satker Kab. Mempawah bertanggung jawab atas semua wilayah yang kodenya diawali '6102'. |
+| (ID Satker Prov. Kalbar)  | 1             | `61`                | Satker Prov. Kalbar bertanggung jawab atas semua wilayah yang kodenya diawali '61'.    |
+| (ID Satker BPS Pusat)     | 0             | `*`                 | Satker Pusat (jika ada) bisa mengakses semua wilayah (wildcard).                       |
+
+
+--- END OF FILE: spec\db.md ---
+
+
+
+========================================================================
+## FILE: spec\studi-kasus-kegiatan.md
+========================================================================
+
+### **Spesifikasi Studi Kasus: Implementasi Kegiatan Statistik (Regsosek 2022)**
+
+## 1. Pendahuluan
+
+Dokumen ini berfungsi sebagai **spesifikasi fungsional dan rujukan utama (blueprint)** untuk pengembangan fitur-fitur inti dalam **Platform Cerdas**. Dengan memodelkan kegiatan **Registrasi Sosial Ekonomi (Regsosek) 2022**, dokumen ini menguraikan persyaratan fungsional, skenario operasional, dan kapabilitas yang harus dimiliki oleh Platform Cerdas untuk dapat mengakomodasi kegiatan statistik modern yang kompleks.
+
+Dokumen ini secara spesifik menguraikan bagaimana Platform Cerdas harus menangani kegiatan multi-tahap yang saling bergantung:
+
+1.  **Tahap 1: Listing (Pencacahan Awal)**: Menggunakan kuesioner ringkas untuk mendaftar semua keluarga, dilengkapi dengan bukti geotagging dan foto.
+2.  **Tahap 2: Pendataan (Pendataan Detail)**: Menggunakan kuesioner komprehensif untuk mengumpulkan data sosial-ekonomi dari keluarga yang telah terdaftar.
+
+Setiap persyaratan yang diuraikan di sini harus menjadi acuan dalam pembuatan _user stories_, desain teknis, dan pengujian fitur di **Cerdas Mobile (PWA)** dan **Cerdas-SM (Backend)**.
+
+Studi kasus ini akan menguraikan bagaimana kedua tahapan tersebut dimodelkan sebagai dua entitas `Kegiatan Statistik` yang terpisah namun saling berhubungan, dan bagaimana Platform Cerdas harus mampu mengakomodasi dua jenis kuesioner yang berbeda secara fundamental.
+
+## 2. Atribut Umum Kegiatan Statistik
+
+Setiap kegiatan statistik, terlepas dari jenisnya, akan memiliki serangkaian atribut dasar yang mendefinisikannya. Berikut adalah pemetaan atribut-atribut ini menggunakan Regsosek 2022 sebagai contoh.
+
+| Atribut              | Deskripsi / Contoh (Regsosek 2022)                                                                                                                                                                                        | Implikasi Teknis di Platform Cerdas                                                                                                                                                                            |
+| :------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Nama Kegiatan**    | Registrasi Sosial Ekonomi 2022                                                                                                                                                                                            | Dicatat di `kegiatan_statistiks.name`. Akan ada dua record: `REGSOSEK 2022 - LISTING` dan `REGSOSEK 2022 - PENDATAAN`.                                                                                         |
+| **Tahun**            | 2022                                                                                                                                                                                                                      | Dicatat di `kegiatan_statistiks.year`.                                                                                                                                                                         |
+| **Deskripsi**        | Pendataan seluruh penduduk Indonesia untuk membangun basis data sosial ekonomi tunggal yang akan digunakan untuk program perlindungan sosial dan pemberdayaan masyarakat.                                                 | Dicatat di kolom deskripsi (jika ada) atau sebagai bagian dari dokumentasi internal.                                                                                                                           |
+| **Metodologi**       | Wawancara tatap muka dari rumah ke rumah (door-to-door) menggunakan metode **CAPI (Computer-Assisted Personal Interviewing)**.                                                                                            | Platform Cerdas secara native mendukung ini melalui **Cerdas Mobile (PWA)**.                                                                                                                                   |
+| **Cakupan**          | **Sensus** (pencacahan lengkap/full enumeration) seluruh penduduk di wilayah Indonesia.                                                                                                                                   | Sistem harus mampu menangani volume data yang sangat besar. Skalabilitas backend dan efisiensi database lokal (DexieJS) menjadi krusial.                                                                       |
+| **Unit Observasi**   | **Keluarga** atau **Rumah Tangga**.                                                                                                                                                                                       | Satu `Assignment` dapat merepresentasikan satu unit observasi (misalnya, satu rumah tangga target), atau satu wilayah kerja kecil (misalnya, satu SLS) di mana PPL akan mengidentifikasi semua unit observasi. |
+| **Unit Analisis**    | **Keluarga** dan **Individu** (anggota keluarga).                                                                                                                                                                         | Data `responses` dalam `assignment_responses` akan berisi struktur data (misalnya, roster) untuk menampung informasi per individu dalam satu keluarga.                                                         |
+| **Periode Lapangan** | Oktober - November 2022                                                                                                                                                                                                   | Dicatat di `kegiatan_statistiks.start_date` dan `end_date`.                                                                                                                                                    |
+| **Indikator Utama**  | Terwujudnya "Satu Data" program perlindungan sosial, data target untuk program pemerintah (seperti PKH, BLT), kondisi perumahan, sanitasi, tingkat pendidikan, ketenagakerjaan, kepemilikan aset, dan demografi penduduk. | `form_schema` harus dirancang untuk dapat menangkap semua variabel yang dibutuhkan untuk menghasilkan indikator-indikator ini.                                                                                 |
+
+## 3. Fase 1: Kegiatan `REGSOSEK 2022 - LISTING`
+
+Ini adalah tahap pertama yang dimodelkan sebagai `Kegiatan Statistik` mandiri di dalam sistem. Kuesioner untuk fase ini bersifat ringkas dan fokus pada identifikasi.
+
+### 3.1. Tujuan Spesifik
+
+- Mengidentifikasi dan mendaftar semua bangunan, rumah tangga, dan keluarga yang ada di dalam satu Satuan Lingkungan Setempat (SLS).
+- Mengumpulkan informasi dasar untuk setiap keluarga.
+- Merekam koordinat geografis (**geotag**) dan mengambil **foto depan** setiap bangunan tempat tinggal untuk verifikasi dan pemetaan.
+- Menghasilkan _prelist_ atau kerangka kerja yang valid, lengkap, dan terverifikasi secara spasial untuk digunakan pada fase pendataan detail.
+
+### 3.2. Alur Kerja di Platform Cerdas
+
+1.  **Persiapan (Admin Kegiatan di Filament):**
+
+    - `admin_kegiatan` membuat `Kegiatan Statistik` **"REGSOSEK 2022 - LISTING"**.
+    - Sebuah `form_schema` (kuesioner) yang spesifik untuk Listing dikembangkan dan diunggah ke dalam kegiatan ini. Secara konseptual, kuesioner ini harus mampu menangkap beberapa blok informasi kunci:
+      - **Informasi Identitas Keluarga:** Variabel untuk nama Kepala Keluarga, alamat, dan jumlah anggota keluarga.
+      - **Informasi Geospasial:** Sebuah field dengan tipe khusus "geotag" yang memungkinkan PWA mengakses GPS perangkat.
+      - **Informasi Visual:** Sebuah field dengan tipe khusus "foto" yang memungkinkan PWA mengakses kamera perangkat.
+
+2.  **Pelaksanaan (PPL di Cerdas Mobile):**
+
+    - PPL mengunduh `Assignment` yang merepresentasikan satu wilayah SLS.
+    - Untuk setiap keluarga yang ditemui, PPL membuat entri data baru.
+    - **Pengambilan Geotag:** Saat PPL berinteraksi dengan field geotag, PWA akan mengambil data `latitude`, `longitude`, dan `accuracy` dari perangkat.
+    - **Pengambilan Foto:** Saat PPL berinteraksi dengan field foto, PWA akan membuka kamera. Setelah foto diambil dan dioptimalkan, PWA akan menanganinya untuk sinkronisasi.
+    - **Proses Sinkronisasi Foto:** Proses `SyncEngine` harus cerdas. Ia akan mengunggah file foto ke endpoint media khusus. Server akan menyimpan file tersebut dan mengembalikan sebuah ID unik. `SyncEngine` kemudian akan memperbarui data respons dengan ID referensi ini. Hasilnya, `responses` akan menyimpan _referensi unik_ (misalnya, sebuah ID) ke file foto yang telah diunggah, bukan file foto itu sendiri.
+
+3.  **Output & Hasil Akhir:**
+    - Hasil dari fase Listing adalah `assignment_responses` yang bersih dan tervalidasi, di mana setiap record berisi data identitas keluarga, objek koordinat geospasial, dan ID referensi ke file foto.
+
+## 4. Fase 2: Kegiatan `REGSOSEK 2022 - PENDATAAN`
+
+Ini adalah tahap pendataan detail yang memanfaatkan output kaya dari fase pertama dan menggunakan kuesioner yang jauh lebih komprehensif.
+
+### 4.1. Tujuan Spesifik
+
+- Melakukan wawancara mendalam dengan setiap keluarga yang telah terdaftar pada fase Listing.
+- Mengumpulkan data sosial dan ekonomi yang komprehensif untuk menghasilkan indikator-indikator pembangunan.
+
+### 4.2. Alur Kerja di Platform Cerdas
+
+1.  **Persiapan (Admin Kegiatan di Filament):**
+
+    - `admin_kegiatan` membuat `Kegiatan Statistik` **"REGSOSEK 2022 - PENDATAAN"**.
+    - `form_schema` (kuesioner) yang **sangat detail dan kompleks** untuk pendataan dikembangkan dan diunggah ke dalam kegiatan ini. Kuesioner ini akan mencakup semua variabel yang dijabarkan di bagian 4.3.
+    - `admin_kegiatan` menggunakan fitur **"Generate Assignment dari Hasil Kegiatan Lain"**, memilih "REGSOSEK 2022 - LISTING" sebagai sumber.
+    - Sistem secara otomatis membuat `Assignment` baru untuk setiap keluarga, dan mengisi `prefilled_data` dengan output dari fase Listing (`nama_krt`, `alamat`, `geotag`, dan `foto_rumah_id`).
+
+2.  **Pelaksanaan (PPL di Cerdas Mobile):**
+    - Saat PPL membuka sebuah tugas, PWA akan menampilkan data `prefilled_data` sebagai informasi referensi yang tidak bisa diubah, termasuk menampilkan foto rumah untuk verifikasi.
+    - Di bawahnya, PWA akan merender antarmuka kuesioner yang kompleks berdasarkan `form_schema` pendataan untuk diisi oleh PPL.
+
+### 4.3. Detail Variabel dan Pemetaan Indikator (High-Level)
+
+Kuesioner untuk fase pendataan harus dirancang untuk menangkap variabel-variabel berikut, yang secara langsung memetakan ke indikator kunci yang dibutuhkan pemerintah.
+
+| Blok Kuesioner                   | Variabel Kunci yang Dikumpulkan                                                                                                       | Contoh Pertanyaan / Data                                                                                             | Indikator yang Dihasilkan                                                                                                                                       |
+| :------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------ | :------------------------------------------------------------------------------------------------------------------- | :-------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **I. Kependudukan & Demografi**  | `nik`, `nama`, `tgl_lahir`, `jenis_kelamin`, `status_perkawinan`, `kepemilikan_kartu_identitas`                                       | (Roster per ART) NIK, nama lengkap, hubungan dengan KRT, status perkawinan.                                          | - Struktur umur penduduk<br>- Angka ketergantungan (dependency ratio)<br>- Cakupan kepemilikan dokumen kependudukan                                             |
+| **II. Perumahan & Sanitasi**     | `status_kepemilikan_bangunan`, `luas_lantai`, `jenis_dinding`, `jenis_atap`, `sumber_air_minum`, `fasilitas_bab`, `sumber_penerangan` | Status: Milik Sendiri/Sewa. Luas: m². Sumber air: Ledeng/Sumur. Fasilitas BAB: Sendiri/Bersama.                      | - **Akses terhadap Perumahan Layak**<br>- **Akses terhadap Air Minum Layak**<br>- **Akses terhadap Sanitasi Layak**<br>- Persentase rumah tangga dengan listrik |
+| **III. Pendidikan**              | `partisipasi_sekolah`, `jenjang_pendidikan`, `ijazah_tertinggi`                                                                       | (Roster per ART) Apakah masih sekolah? Jenjang saat ini. Ijazah tertinggi yang dimiliki.                             | - Angka Partisipasi Sekolah (APS)<br>- Rata-rata Lama Sekolah (RLS)<br>- Tingkat Pendidikan Penduduk                                                            |
+| **IV. Kesehatan & Disabilitas**  | `keluhan_kesehatan`, `status_gizi_balita` (jika ada), `jenis_disabilitas`                                                             | (Roster per ART) Riwayat penyakit kronis. Jenis kesulitan yang dialami (melihat, mendengar, dll.).                   | - Profil kesehatan penduduk<br>- Prevalensi disabilitas<br>- Data awal untuk identifikasi risiko stunting                                                       |
+| **V. Ketenagakerjaan**           | `status_bekerja`, `lapangan_usaha`, `jabatan_pekerjaan`, `status_kepemilikan_usaha`                                                   | (Roster per ART >15th) Apakah bekerja seminggu terakhir? Sektor (Pertanian, Jasa). Status (Karyawan, Wiraswasta).    | - Tingkat Partisipasi Angkatan Kerja (TPAK)<br>- **Profil Ketenagakerjaan** (formal/informal)<br>- Distribusi tenaga kerja per sektor                           |
+| **VI. Aset & Kepemilikan Usaha** | `kepemilikan_lahan`, `jumlah_ternak`, `kepemilikan_kendaraan`, `kepemilikan_aset_elektronik`, `akses_kredit_usaha`                    | Apakah memiliki lahan pertanian? Jumlah sapi. Punya motor/mobil? Punya kulkas/TV? Apakah pernah mendapat KUR?        | - **Profil Ekonomi & Tingkat Kesejahteraan**<br>- Indeks Kepemilikan Aset (proxy pendapatan)<br>- Akses terhadap layanan keuangan                               |
+| **VII. Perlindungan Sosial**     | `penerimaan_pkh`, `penerimaan_bpnt`, `penerimaan_blt`, `kepesertaan_bpjs`                                                             | (Per Keluarga & ART) Apakah menerima bantuan PKH dalam 3 bulan terakhir? Apakah terdaftar sebagai penerima PBI BPJS? | - **Cakupan Program Perlindungan Sosial**<br>- Analisis inklusi/eksklusi error program bantuan                                                                  |
+
+## 5. Skenario Operasional Kunci dan Implikasinya
+
+Kegiatan lapangan tidak pernah berjalan mulus sepenuhnya. Platform Cerdas harus dirancang untuk menangani anomali dan skenario dunia nyata secara elegan. Berikut adalah beberapa skenario kunci dan implikasi fitur yang wajib ada:
+
+### Skenario A: Penambahan Unit Observasi Baru di Lapangan (Saat Listing)
+
+- **Situasi:** Seorang PPL sedang melakukan listing di sebuah SLS. Ia menemukan sebuah rumah baru yang dihuni oleh satu keluarga yang belum pernah terdata sebelumnya.
+- **Implikasi Fitur untuk Cerdas Mobile (PWA):**
+  - Antarmuka PWA dalam `Assignment` Listing (yang berbasis wilayah/SLS) **wajib memiliki fitur "Tambah Keluarga Baru"**.
+  - Fitur ini memungkinkan PPL untuk membuat dan mengisi satu set kuesioner Listing baru (termasuk geotag dan foto) yang akan terasosiasi dengan `Assignment` SLS tersebut. PPL harus bisa melakukan ini berulang kali untuk setiap keluarga baru yang ditemukannya.
+- **Implikasi Fitur untuk Cerdas-SM (Backend):**
+  - Backend harus mampu menerima dan memproses data dari entitas-entitas baru yang dibuat secara dinamis oleh PPL di lapangan.
+
+### Skenario B: Penanganan Unit Observasi Tidak Ditemukan (Saat Pendataan)
+
+- **Situasi:** Seorang PPL ditugaskan untuk mendata keluarga "Budi Santoso" pada fase Pendataan. `prefilled_data` sudah ada dari hasil Listing. Namun, saat di lapangan, ternyata keluarga tersebut sudah pindah.
+- **Implikasi Fitur untuk Cerdas Mobile (PWA):**
+  - Formulir pendataan **wajib memiliki opsi untuk menandai status akhir dari kunjungan**. Ini bukan sekadar `Approve/Reject` oleh PML, melainkan hasil temuan PPL.
+  - Pilihan status harus jelas, misalnya: `Selesai Dicacah`, `Responden Menolak`, `Keluarga Pindah`, `Rumah Kosong`, `Tidak Ditemukan`.
+  - Jika PPL memilih status selain `Selesai Dicacah`, sisa kuesioner harus dinonaktifkan, dan PPL mungkin diwajibkan mengisi kolom catatan.
+- **Implikasi Fitur untuk Cerdas-SM (Backend):**
+  - Tabel `assignment_responses` perlu mengakomodasi status-status final dari lapangan ini untuk membedakannya dari alur kerja pemeriksaan PPL-PML.
+
+### Skenario C: Koreksi Informasi Kunci
+
+- **Situasi:** Pada `prefilled_data`, nama kepala keluarga tertulis "Budi Santoso". Saat wawancara, PPL mengetahui bahwa nama yang benar di KTP adalah "Budi Santosa".
+- **Implikasi Fitur untuk Platform Cerdas:**
+  - `prefilled_data` yang ditampilkan di PWA harus bersifat **read-only** untuk menjaga integritas data asli dari Listing.
+  - Namun, `form_schema` untuk Pendataan **harus dirancang untuk memiliki field verifikasi/koreksi**. Contohnya: "Nama Kepala Keluarga (sesuai prelist): Budi Santoso" (read-only), diikuti field isian "Nama Kepala Keluarga (hasil verifikasi): [input teks]".
+  - Dengan demikian, sistem menyimpan baik data asli maupun data yang telah dikoreksi, yang sangat penting untuk analisis kualitas data di kemudian hari.
+
+## 6. Fase Pasca-Lapangan: Pemantauan dan Ekspor Data
+
+Setelah data terkumpul dan divalidasi, nilainya terletak pada kemudahan akses dan analisis.
+
+- **Pemantauan Progres (Monitoring):**
+
+  - **Implikasi Fitur untuk Cerdas-SM (Filament):** Panel admin **wajib memiliki dasbor pemantauan** untuk `admin_kegiatan`. Dasbor ini harus menampilkan statistik agregat secara _real-time_ atau mendekati _real-time_, seperti:
+    - Jumlah `Assignment` berdasarkan status (Assigned, Submitted by PPL, Approved by PML, dll.).
+    - Progres per PPL/PML atau per wilayah.
+    - Distribusi status akhir lapangan (berapa banyak yang menolak, pindah, dll.).
+    - Tampilan peta (opsional/lanjutan) yang memvisualisasikan geotag yang telah dikumpulkan.
+
+- **Ekspor Data:**
+  - **Implikasi Fitur untuk Cerdas-SM (Filament):** Platform **wajib menyediakan modul ekspor data yang fleksibel**.
+  - Admin harus dapat mengunduh data `assignment_responses` yang sudah bersih (misalnya, yang berstatus `Approved by Admin`).
+  - Opsi ekspor minimal harus mencakup format **CSV** dan **Excel**.
+  - Fitur ekspor harus memungkinkan admin untuk memilih kolom mana yang akan disertakan, dan idealnya dapat menangani data relasional (misalnya, data roster individu diekspor ke file terpisah yang dapat di-join dengan data keluarga).
+
+## 7. Ringkasan: Fitur Kunci Platform Cerdas yang Wajib Dikembangkan
+
+Berdasarkan studi kasus ini, berikut adalah daftar fitur non-negosiabel yang harus menjadi fokus pengembangan Platform Cerdas:
+
+1.  **Manajemen Kegiatan Multi-Fase:** Kemampuan untuk membuat kegiatan yang output-nya menjadi input bagi kegiatan lain.
+2.  **Generator Assignment dari Kegiatan Sebelumnya:** Alat di panel admin untuk membuat `Assignment` secara massal dari hasil kegiatan yang sudah selesai.
+3.  **Dukungan Tipe Input Lanjutan:** Kapabilitas `form_schema` dan PWA untuk menangani **Geotag (GPS)** dan **Foto (Kamera)** secara _native_.
+4.  **Mekanisme `prefilled_data`:** Kemampuan untuk menyuntikkan data dari sumber sebelumnya ke dalam `Assignment` baru sebagai informasi referensi.
+5.  **Kemampuan PPL Menambah Entitas Baru di Lapangan:** Fitur bagi petugas untuk membuat record baru "on-the-fly" di dalam `Assignment` yang berbasis wilayah.
+6.  **Manajemen Status Final Lapangan:** Mekanisme bagi PPL untuk memberi label pada `Assignment` dengan hasil akhir kunjungan (misalnya, 'Tidak Ditemukan', 'Menolak').
+7.  **Dasbor Pemantauan Progres Real-time:** Antarmuka visual bagi admin untuk melacak kemajuan dan kualitas data selama periode lapangan.
+8.  **Modul Ekspor Data Fleksibel:** Kemampuan untuk mengunduh data bersih dalam format standar (CSV, Excel) untuk analisis lebih lanjut.
+
+
+--- END OF FILE: spec\studi-kasus-kegiatan.md ---
+
+
+
+========================================================================
+## FILE: frontend-pwa\.gemini\commands\epic-core-workflow\generate-activity-dashboard-page.toml
+========================================================================
+
+# Perintah untuk menghasilkan Halaman Dasbor Kegiatan yang menampilkan statistik dan opsi sinkronisasi.
+description = "Generate the Activity Dashboard Page, which shows statistics, countdown, and advanced sync options for a selected activity."
+
+prompt = """
+Generate a Vue 3 component file located at `src/views/ActivityDashboardPage.vue`. This is the central hub for a user within a single statistical activity. It displays summary statistics and provides crucial data synchronization controls. The page must be fully offline-first for displaying statistics.
+
+**1. Technical Requirements:**
+- Use `<script setup>` with the Vue 3 Composition API.
+- UI must be built with Framework7-Vue components (`<f7-page>`, `<f7-navbar>`, `<f7-block>`, `<f7-card>`, `<f7-button>`, `<f7-actions>`).
+- Inject and use core singletons: `OfflineService` and `SyncEngine`.
+- Use `useRoute` to get the `activityId` from the URL parameter.
+
+**2. Component Logic (`<script setup>`):**
+- **State Management:**
+  - `const route = useRoute();`
+  - `const activityId = computed(() => route.params.activityId as string);`
+  - `const stats = ref({ total: 0, assigned: 0, submitted: 0, approved: 0, rejected: 0 });`: Holds the calculated statistics.
+  - `const activityDetails = ref<ActivityDetails | null>(null);`: To hold activity metadata like end dates. Define a placeholder interface `ActivityDetails { name: string; end_date: string; extended_end_date: string; }`.
+  - `const remainingDays = ref<number>(0);`: To display the countdown.
+  - `const isLoading = ref<boolean>(true);`: For initial data loading.
+  - `const hasInitialData = ref<boolean>(false);`: To track if the massive initial download has been performed for this activity.
+
+- **`onMounted` Lifecycle Hook:**
+  - Call a `loadDashboardData` method.
+
+- **Methods:**
+  - `async function loadDashboardData()`:
+    1. Set `isLoading = true`.
+    2. Check `OfflineService` to see if assignments for this `activityId` exist. `hasInitialData.value = await OfflineService.hasDataForActivity(activityId.value);`.
+    3. If `hasInitialData.value` is true:
+       - Fetch all assignments from `OfflineService.getAllAssignments(activityId.value)`.
+       - Fetch activity metadata (like end dates) from `OfflineService`.
+       - **Calculate statistics locally**: Iterate through the assignments to populate the `stats.value` object.
+       - **Calculate remaining days**: Implement logic based on `extended_end_date` and `end_date`.
+    4. Set `isLoading = false`.
+  
+  - `async function performInitialDownload()`:
+    - This is for users who have no data locally for this activity.
+    - It should display a loading indicator/overlay.
+    - Call a new method `SyncEngine.performInitialDownloadForActivity(activityId.value)`.
+    - After completion, reload the dashboard by calling `loadDashboardData()`.
+  
+  - `function openSyncOptions()`:
+    - This method opens an `<f7-actions>` sheet with the two sync options.
+  
+  - `async function handleSync(syncType: 'delta' | 'full')`:
+    - This method is called from the actions sheet.
+    - If `syncType` is 'delta', call `SyncEngine.performDeltaSync(activityId.value)`. Show a toast on completion.
+    - If `syncType` is 'full':
+      1. Show a strong confirmation dialog (`f7.dialog.confirm`).
+      2. If confirmed, call `SyncEngine.performFullOverwriteSync(activityId.value)`.
+      3. After completion, reload the dashboard data.
+
+**3. Template Structure (`<template>`):**
+- **Root Element:** `<f7-page>`.
+- **Navbar:** `<f7-navbar :title="activityDetails?.name || 'Dasbor'" back-link="Beranda">`.
+
+- **Main Content:**
+  - **Initial Download Offer (v-if="!hasInitialData && !isLoading"):**
+    - Display a large card (`<f7-card>`) with a message: "Data untuk kegiatan ini belum diunduh. Unduh data sekarang untuk memulai kerja offline."
+    - A prominent button `<f7-button large fill @click="performInitialDownload">Unduh Data Kegiatan</f7-button>`.
+  
+  - **Dashboard View (v-else-if="hasInitialData && !isLoading"):**
+    - **Countdown Block:**
+      - An `<f7-block-title>`: "Sisa Waktu Pelaksanaan".
+      - An `<f7-card>` displaying `remainingDays.value` in a large font with the label "Hari".
+    - **Statistics Block:**
+      - An `<f7-block-title>`: "Ringkasan Statistik".
+      - An `<f7-block strong inset>` which is `clickable` and links to the location summary page: `@click="$router.push(`/activity/${activityId}/locations`)`"
+      - Inside, display the stats using a grid or list. Example: `<div><h3>{{ stats.total }}</h3><p>Total Tugas</p></div>`.
+    - **Sync Button:**
+      - An `<f7-block>` containing a single button: `<f7-button large fill @click="openSyncOptions">Sinkronisasi Data</f7-button>`.
+
+- **Actions Sheet (Popup):**
+  - Place this at the root level of the template.
+  - `<f7-actions id="sync-actions">`
+    - `<f7-actions-group>`
+      - `<f7-actions-label>Pilih Jenis Sinkronisasi</f7-actions-label>`
+      - `<f7-actions-button @click="handleSync('delta')">Sync Perubahan Assignment</f7-actions-button>`
+      - `<f7-actions-button color="red" @click="handleSync('full')">Sync Full Assignment (Timpa Data Lokal)</f7-actions-button>`
+    - `<f7-actions-group>`
+      - `<f7-actions-button bold>Batal</f7-actions-button>`
+    - `</f7-actions-group>`
+  - `</f7-actions>`
+"""
+
+
+--- END OF FILE: frontend-pwa\.gemini\commands\epic-core-workflow\generate-activity-dashboard-page.toml ---
+
+
+
+========================================================================
+## FILE: frontend-pwa\.gemini\commands\epic-core-workflow\generate-assignment-table-page.toml
+========================================================================
+
+# Perintah untuk menghasilkan Halaman Tabel Assignment yang menampilkan daftar tugas terfilter dengan kolom dinamis.
+description = "Generate the Assignment Table Page, which displays a filtered list of assignments in a table with dynamically configured columns from the form schema."
+
+prompt = """
+Generate a Vue 3 component file located at `src/views/AssignmentTablePage.vue`. This page displays a detailed, tabular list of assignments that belong to a specific location group selected on the previous page. Its columns are dynamically rendered based on the `form_schema`.
+
+**1. Technical Requirements:**
+- Use `<script setup>` with the Vue 3 Composition API.
+- The UI MUST be built with Framework7-Vue components. For the table, using `<f7-data-table>` is highly recommended for structure and styling.
+- Inject `OfflineService`.
+- Use `useRoute` to get both the `activityId` and the `locationKey` from the URL parameters.
+
+**2. Component Logic (`<script setup>`):**
+- **State Management:**
+  - `const route = useRoute();`
+  - `const activityId = computed(() => route.params.activityId as string);`
+  - `const locationKey = computed(() => route.params.locationKey as string);`
+  - `const filteredAssignments = ref<AssignmentResponse[]>([]);`: To store the final list of assignments to be displayed.
+  - `const formSchema = ref<FormSchema | null>(null);`: Needed to get the table column configuration.
+  - `const tableHeaders = ref<string[]>([]);`: A reactive ref to hold the header labels for the table.
+  - `const tableColumnsConfig = ref<any[]>([]);`: Holds the column configuration array from the schema.
+  - `const isLoading = ref<boolean>(true);`
+
+- **Core Logic - Filtering and Data Shaping:**
+  - Create a method `async function loadAndFilterData()` that will be called in `onMounted`. This method must:
+    1. Set `isLoading = true`.
+    2. In parallel, fetch:
+       a. All assignments for the activity from `OfflineService.getAllAssignments(activityId.value)`.
+       b. The form schema from `OfflineService.getFormSchema(activityId.value)`.
+    3. **Filtering Logic:**
+       - Iterate through all fetched assignments.
+       - For each assignment, check if its location code (across all `level_x_code` fields defined in `formSchema.value.assignment_table_grouping_levels`) matches the `locationKey.value` from the URL.
+       - Push all matching assignments into `filteredAssignments.value`.
+    4. **Column Configuration Logic:**
+       - Read the `formSchema.value.assignment_table_columns` array and store it in `tableColumnsConfig.value`.
+       - From this config, extract just the `label` for each column and populate `tableHeaders.value`.
+    5. Set `isLoading = false`.
+
+- **`onMounted` Lifecycle Hook:**
+  - Call `loadAndFilterData()`.
+
+- **Methods:**
+  - `function getCellValue(assignment, columnKey: string)`:
+    - This is a crucial utility function for the template to resolve the cell value dynamically.
+    - The `columnKey` will be a string like `"prefilled.nama_krt"` or `"status"`.
+    - The function must parse this key.
+    - If the key is `"status"`, it should return `assignment.status`.
+    - If the key starts with `"prefilled."`, it should access the nested value, e.g., `assignment.prefilled_data[key.split('.')[1]]`.
+    - It should handle cases where the value is null or undefined gracefully, returning an empty string or a placeholder.
+  - `function getStatusColor(status: string): string`: A utility to return a color name for the status chip.
+
+**3. Template Structure (`<template>`):**
+- **Root Element:** `<f7-page>`.
+- **Navbar:** `<f7-navbar title="Daftar Assignment" back-link="Ringkasan">`.
+
+- **Main Content:**
+  - **Loading State:**
+    - Use `v-if="isLoading"` to display a `f7-data-table` skeleton.
+  - **Data Table (`<f7-data-table>`):**
+    - Use `v-else`. The `f7-data-table` component is the main element.
+    - **Table Header (`<thead>`):**
+      - `<tr>`
+        - Loop through `tableHeaders`: `<th class="label-cell" v-for="header in tableHeaders">{{ header }}</th>`.
+      - `</tr>`
+    - **Table Body (`<tbody>`):**
+      - Loop through `filteredAssignments`: `<tr v-for="assignment in filteredAssignments" :key="assignment.assignmentId">`.
+      - This `<tr>` should be clickable, navigating to the form page: `@click="$router.push(`/activity/${activityId}/assignment/${assignment.assignmentId}`)"`.
+      - **Dynamic Cells (`<td>`):**
+        - Inside the `<tr>`, loop through the `tableColumnsConfig` to ensure the cells are rendered in the correct order.
+        - `<td class="label-cell" v-for="column in tableColumnsConfig">`
+          - **Conditional Rendering for Status:**
+            - Use `v-if="column.key === 'status'"` to render the status differently, e.g., with an `<f7-chip>`.
+            - `<f7-chip :text="getCellValue(assignment, column.key)" :color="getStatusColor(getCellValue(assignment, column.key))" />`
+          - **Default Rendering for other cells:**
+            - Use `v-else` to display the plain text value.
+            - `{{ getCellValue(assignment, column.key) }}`
+        - `</td>`
+      - `</tr>`
+
+"""
+
+
+--- END OF FILE: frontend-pwa\.gemini\commands\epic-core-workflow\generate-assignment-table-page.toml ---
+
+
+
+========================================================================
+## FILE: frontend-pwa\.gemini\commands\epic-core-workflow\generate-home-page.toml
+========================================================================
+
+# Perintah untuk menghasilkan Halaman Beranda (Daftar Kegiatan) setelah pengguna login.
+description = "Generate the Home Page component that appears after login, displaying a list of the user's assigned statistical activities."
+
+prompt = """
+Generate a Vue 3 component file located at `src/views/HomePage.vue`. This component serves as the main landing page after a user successfully logs in. Its primary function is to fetch and display a list of all statistical activities the user is a member of.
+
+**1. Technical Requirements:**
+- The component **MUST** use the `<script setup>` syntax with the Composition API.
+- The entire UI **MUST** be built using Framework7-Vue components (`<f7-page>`, `<f7-navbar>`, `<f7-list>`, `<f7-list-item>`, `<f7-chip>`, etc.).
+- The component must inject and use the `ApiClient` singleton to fetch data.
+- It should use `vue-router`'s `useRouter` for navigation.
+
+**2. Component Logic (`<script setup>`):**
+- **State Management:**
+  - `const activities = ref<Activity[]>([]);`: A reactive ref to store the list of activities fetched from the server. Define a placeholder `Activity` interface for type safety, e.g., `{ id: string; name: string; year: number; user_role: 'PPL' | 'PML'; status: string; }`.
+  - `const isLoading = ref<boolean>(true);`: To control the display of a loading skeleton.
+  - `const router = useRouter();`: To handle navigation programmatically.
+
+- **`onMounted` Lifecycle Hook:**
+  - Immediately set `isLoading` to `true`.
+  - Call a new method on the `ApiClient`, `getActivitiesForUser()`, which is expected to return an array of the user's activities.
+  - Wrap the API call in a `try...catch...finally` block.
+    - On success, populate `activities.value`.
+    - On error, log the error to the console and potentially show a toast notification.
+    - In the `finally` block, set `isLoading` to `false`.
+
+- **Methods:**
+  - `function handleActivityClick(activityId: string)`: A method that navigates the user to the specific activity's dashboard page. It should call `router.push(`/activity/${activityId}/dashboard`);`.
+  - `function getRoleChipColor(role: string): string`: Returns 'green' if role is 'PPL', 'blue' if 'PML', and 'gray' otherwise.
+  - `function getStatusChipColor(status: string): string`: Returns a color based on the activity status (e.g., 'orange' for 'Berlangsung', 'gray' for 'Selesai').
+
+**3. Template Structure (`<template>`):**
+- **Root Element:** `<f7-page>`.
+- **Navbar:** Use `<f7-navbar title="Beranda">`.
+- **Main Content:**
+  - **Loading State:**
+    - Use `v-if="isLoading"` to display a skeleton loader. This should be an `<f7-list>` with several `<f7-list-item>` elements using skeleton classes like `skeleton-text`.
+  - **Empty State:**
+    - Use `v-else-if="!isLoading && activities.length === 0"` to display a message. Render an `<f7-block-title>` and an `<f7-block>` with a clear message like "Anda tidak memiliki kegiatan aktif saat ini. Silakan hubungi administrator Anda."
+  - **Activities List:**
+    - Use `v-else` with an `<f7-list media-list>` to render the activities.
+    - Loop through the list using `v-for="activity in activities" :key="activity.id"`.
+    - Each item should be an `<f7-list-item>` that is `clickable` and triggers `@click="handleActivityClick(activity.id)"`.
+    - **Content of each list item:**
+      - **Title:** The `title` attribute should be `{{ activity.name }}`.
+      - **Footer (for details):** Use the `footer` slot to display details using `<f7-chip>` components for better visual separation.
+        - A chip for the year: `<f7-chip :text="activity.year" />`
+        - A chip for the role: `<f7-chip :text="activity.user_role" :color="getRoleChipColor(activity.user_role)" />`
+        - A chip for the status: `<f7-chip :text="activity.status" :color="getStatusChipColor(activity.status)" />`
+
+"""
+
+
+--- END OF FILE: frontend-pwa\.gemini\commands\epic-core-workflow\generate-home-page.toml ---
+
+
+
+========================================================================
+## FILE: frontend-pwa\.gemini\commands\epic-core-workflow\generate-location-summary-page.toml
+========================================================================
+
+# Perintah untuk menghasilkan Halaman Ringkasan Lokasi yang mengelompokkan assignment berdasarkan hierarki wilayah.
+description = "Generate the Location Summary Page, which groups assignments hierarchically by location codes, from level 5 down to level 2."
+
+prompt = """
+Generate a Vue 3 component file located at `src/views/LocationSummaryPage.vue`. The purpose of this page is to take a flat list of all assignments for an activity and display them grouped by geographical location in a hierarchical manner.
+
+**1. Technical Requirements:**
+- Use `<script setup>` with the Vue 3 Composition API.
+- UI must be built with Framework7-Vue components (`<f7-page>`, `<f7-navbar>`, `<f7-card>`, etc.).
+- Inject `OfflineService` to fetch all necessary data.
+- Use `useRoute` to get the `activityId`.
+
+**2. Component Logic (`<script setup>`):**
+- **State Management:**
+  - `const route = useRoute();`
+  - `const activityId = computed(() => route.params.activityId as string);`
+  - `const allAssignments = ref<AssignmentResponse[]>([]);`: To store the raw list of assignments.
+  - `const formSchema = ref<FormSchema | null>(null);`: To get the grouping levels and level definitions.
+  - `const masterSls = ref<MasterSlsData | null>(null);`: To store the master SLS data for mapping codes to names.
+  - `const isLoading = ref<boolean>(true);`
+
+- **Core Logic - Hierarchical Grouping (CRUCIAL):**
+  - Create a `computed` property named `groupedLocations`. This is the most complex part of the component.
+  - This computed property must:
+    1. Return an empty array if `formSchema.value`, `allAssignments.value`, or `masterSls.value` are not yet loaded.
+    2. Read the `assignment_table_grouping_levels` array from `formSchema.value` (e.g., `['level_5_code', 'level_4_code', ...]`).
+    3. Create a Map or an object to store the groups, e.g., `const groups = new Map();`.
+    4. Iterate through `allAssignments.value`. For each assignment:
+       a. Iterate through the `grouping_levels` from the schema.
+       b. Find the first, most specific level code that exists on the assignment (e.g., check `assignment.level_5_code` first).
+       c. If found, this code becomes the `groupKey`.
+       d. If a group for this `groupKey` doesn't exist in the `groups` map, create it. The group object should contain: `groupKey`, `groupLevel` (e.g., 'level_5_code'), `displayName`, `assignments` (an array), and stats (`total`, `submitted`, etc.).
+       e. **To get `displayName`**: Use the `groupKey` and `groupLevel` to look up the human-readable name from the `masterSls` data and the `level_definitions` in the schema. For example: "[SLS] 001 - Blok A".
+       f. Push the current assignment into the `group.assignments` array and update the group's stats.
+    5. Convert the `groups` map into an array and return it.
+
+- **`onMounted` Lifecycle Hook:**
+  - Call a `loadData` method.
+
+- **Methods:**
+  - `async function loadData()`:
+    1. Set `isLoading = true`.
+    2. In parallel (using `Promise.all`), fetch:
+       a. All assignments: `OfflineService.getAllAssignments(activityId.value)`.
+       b. The form schema: `OfflineService.getFormSchema(activityId.value)`.
+       c. The master SLS data: `OfflineService.getMasterData('MASTER_SLS')`.
+    3. Populate the respective `ref` variables.
+    4. Set `isLoading = false`.
+  
+  - `function getStatsChip(group): { text: string; color: string }`: A utility to return the text and color for a summary chip on the card, e.g., "5 / 10 Selesai".
+
+**3. Template Structure (`<template>`):**
+- **Root Element:** `<f7-page>`.
+- **Navbar:** `<f7-navbar title="Ringkasan per Wilayah" back-link="Dasbor">`.
+
+- **Main Content:**
+  - **Loading State:**
+    - Use `v-if="isLoading"` to display a skeleton loader (e.g., several `f7-card` skeletons).
+  - **Empty State:**
+    - Use `v-else-if="groupedLocations.length === 0"` with a message like "Tidak ada tugas yang dapat ditampilkan."
+  - **Location Groups List:**
+    - Use `v-else` to loop through the `groupedLocations` computed property.
+    - `v-for="group in groupedLocations" :key="group.groupKey"`.
+    - **Render each group as a `clickable` `<f7-card-header>` and `<f7-card-content>` inside an `<f7-card>`:**
+      - The entire card should be a link or have a click handler that navigates to the assignment table page for that group. The navigation URL must include the group key: `$router.push(`/activity/${activityId}/assignments/by-location/${group.groupKey}`)`.
+      - **Card Header (`<f7-card-header>`):**
+        - Display the `group.displayName` prominently.
+      - **Card Content (`<f7-card-content>`):**
+        - Display a summary of statistics for that group.
+        - Example: `<span>Total: {{ group.stats.total }}</span>`.
+        - Use an `<f7-chip>` to show progress, e.g., `<f7-chip :text="getStatsChip(group).text" :color="getStatsChip(group).color" />`.
+
+"""
+
+
+--- END OF FILE: frontend-pwa\.gemini\commands\epic-core-workflow\generate-location-summary-page.toml ---
+
+
+
+========================================================================
+## FILE: frontend-pwa\.gemini\commands\generate-api-client.toml
+========================================================================
+
+description = "Generate a type-safe ApiClient class for communicating with the Laravel backend, including new methods for the activity-based workflow and specific sync strategies."
+
+prompt = """
+Generate a TypeScript class named `ApiClient` located in `src/services/api/ApiClient.ts`. This class will serve as a centralized, singleton wrapper around Axios.
+
+**1. Axios Instance Configuration & Interceptors (Tidak Berubah):**
+Create a private Axios instance configured with:
+- `baseURL` from `VITE_API_BASE_URL`.
+- `timeout` of 15,000ms.
+- Default headers for JSON.
+- **Request Interceptor:** To inject the Bearer Token from `authStore`.
+- **Response Interceptor:** To handle global errors and automatic token refresh on 401 errors.
+
+**2. Refactored Public Method Definitions:**
+Implement the following public methods, ensuring they are all `async` and properly typed.
+
+// --- Metode Otentikasi & Inisialisasi ---
+- `async login(credentials: LoginCredentials): Promise<AuthResponse>`
+/**
+ * (BARU) Mengautentikasi pengguna menggunakan token dari Google.
+ * Backend akan memverifikasi token ini, lalu mencari/membuat user sesuai alur kerja.
+ * @param googleToken - Token ID yang diterima dari client-side Google SDK.
+ * @returns {Promise<AuthResponse>} Objek yang sama dengan login password, berisi token sesi dan data user.
+ */
+- async loginWithGoogle(googleToken: string): Promise<AuthResponse>
+- `async logout(): Promise<void>`
+- `async refreshToken(): Promise<RefreshTokenResponse>`
+
+/**
+ * (BARU) Mengambil daftar kegiatan statistik di mana pengguna terdaftar.
+ * Dipanggil oleh HomePage setelah login.
+ * @returns {Promise<Activity[]>} Array ringkas dari metadata kegiatan.
+ */
+- `async getActivitiesForUser(): Promise<Activity[]>`
+
+// --- Metode Sinkronisasi (Download dari Server) ---
+
+/**
+ * (BARU) Mengunduh seluruh data yang diperlukan untuk memulai kerja offline pada satu kegiatan.
+ * Ini adalah pengunduhan masif awal.
+ * @param activityId - ID kegiatan yang akan diunduh.
+ * @returns {Promise<InitialDownloadPayload>} Objek besar berisi assignments, form schema, dan master data.
+ */
+- `async performInitialDownload(activityId: string): Promise<InitialDownloadPayload>`
+
+/**
+ * (BARU) Mengunduh hanya perubahan (delta) yang terjadi sejak sinkronisasi terakhir.
+ * @param activityId - ID kegiatan.
+ * @param sinceTimestamp - ISO string timestamp dari sinkronisasi terakhir.
+ * @returns {Promise<DeltaSyncPayload>} Objek berisi assignment baru, status yang diperbarui, dan editan.
+ */
+- `async performDeltaSync(activityId: string, sinceTimestamp: string): Promise<DeltaSyncPayload>`
+
+/**
+ * (BARU) Mengunduh ulang seluruh data untuk satu kegiatan. Digunakan untuk overwrite sync.
+ * Secara fungsional, ini mungkin memanggil endpoint yang sama dengan performInitialDownload.
+ * @param activityId - ID kegiatan.
+ * @returns {Promise<InitialDownloadPayload>} Objek besar berisi semua data.
+ */
+- `async performFullResync(activityId: string): Promise<InitialDownloadPayload>`
+
+
+// --- Metode Aksi & Upload ---
+
+/**
+ * (RETAINED) Mengirim batch data assignment yang telah disubmit/diubah ke server.
+ * Ini adalah proses UPLOAD.
+ * @param activityId - ID kegiatan.
+ * @param payload - Array berisi assignment responses.
+ * @returns {Promise<SyncResult>}
+ */
+- `async submitAssignmentBatch(activityId: string, payload: AssignmentResponse[]): Promise<SyncResult>`
+
+/**
+ * (BARU) Memeriksa ke server tindakan apa yang diizinkan untuk assignment tertentu pada saat ini.
+ * Krusial untuk tombol Approve/Reject PML. Membutuhkan koneksi online.
+ * @param assignmentId - ID assignment yang akan diperiksa.
+ * @returns {Promise<string[]>} Array string, e.g., ['APPROVE', 'REJECT'].
+ */
+- `async getAllowedActions(assignmentId: string): Promise<string[]>`
+
+- `async uploadAssignmentPhoto(activityId: string, assignmentId: string, photo: File): Promise<FileUploadResponse>`
+  - Handles file uploads using `multipart/form-data`. This requires overriding the default JSON headers for this specific request.
+
+// --- Methods for Diagnostics ---
+- `async postErrorLogs(logs: ErrorLog[]): Promise<void>`
+
+**4. Architectural Requirements:**
+- The class must be a singleton, exporting a single pre-initialized instance.
+- Use TypeScript interfaces for all method parameters and return types to ensure type safety.
+- Include detailed JSDoc comments explaining what each method does, its parameters, and what it returns.
+"""
+
+
+--- END OF FILE: frontend-pwa\.gemini\commands\generate-api-client.toml ---
+
+
+
+========================================================================
+## FILE: frontend-pwa\.gemini\commands\generate-form.toml
+========================================================================
+
+# Perintah untuk menghasilkan komponen form engine (VERSI REFACTOR).
+description = "Generate the complete, dynamic Form Engine component, now with support for read-only prefilled data and online-aware action buttons for PMLs."
+
+prompt = """
+Generate a Vue 3 component file located at `src/views/InterviewFormPage.vue`. This component must function as a **generic and reusable Form Engine** driven entirely by a `formSchema` prop.
+
+**1. Arsitektur & Ketergantungan Inti (Tidak Berubah):**
+- Vue 3 Composition API with `<script setup>`.
+- UI: Exclusively Framework7-Vue components.
+- State: Pinia for auth/master data stores.
+- Offline: All data interactions through the `OfflineService` singleton.
+- Validation: Zod for schema-driven validation.
+
+**2. Props & State Management (Diperbarui):**
+- **Props:**
+  - `activityId: string` (required)
+  - `assignmentId: string` (required)
+- **Reactive State:**
+  - `const assignmentData = ref<AssignmentResponse | null>(null);`
+  - `const formSchema = ref<FormSchema | null>(null);`
+  - `const formState = reactive({ responses: {} });`: **PENTING:** Inisialisasi `formState` dengan objek `responses` bersarang. Ini memisahkan data isian PPL dari data root `assignment`.
+  - `const isPmlMode = ref<boolean>(false);`: Untuk membedakan mode entri PPL dan mode review PML.
+  - `const allowedActions = ref<string[]>([]);`: (BARU) Untuk menyimpan aksi yang diizinkan dari server untuk PML.
+  - `const isLoading = ref<boolean>(true);`
+
+- **`onMounted` Logic (Diperbarui):**
+  - Set `isLoading` to true.
+  - Fetch `assignmentData` and `formSchema` from `OfflineService`.
+  - Check user's role. If role is 'PML', set `isPmlMode.value = true`.
+  - Initialize `formState.responses` with the existing `assignmentData.responses`.
+  - **(BARU - Logika Mode PML):** If `isPmlMode.value` is true, call a new method `fetchAllowedActions()`.
+  - Set `isLoading` to false.
+
+**3. Rendering Dinamis & Tipe Pertanyaan (Dengan Penambahan):**
+- The `<template>` must recursively render the form based on `formSchema.pages`.
+- **(BARU) Penanganan Prefilled Data:**
+  - Introduce a new question `type: "prefilled_display"`.
+  - This type will be rendered as a **read-only** `<f7-list-input>` or simple text block.
+  - Its value should be read directly from `assignmentData.value.prefilled_data` based on a key in the question's schema. It is **NOT** part of the `formState.responses` object.
+
+**4. Logika Aksi & Tombol (Sangat Diperbarui):**
+- The `<template>` must display different action buttons at the bottom based on the mode.
+- **Tombol Mode PPL (`v-if="!isPmlMode"`):**
+  - A single "Submit" button.
+  - Calls a `submitForm` method which validates the `formState.responses`, updates the assignment status to `Submitted by PPPL`, and queues it for upload via `OfflineService`.
+- **Tombol Mode PML (`v-if="isPmlMode"`):**
+  - A block of buttons that are rendered conditionally using `v-for="action in allowedActions"`.
+  - Example: `<f7-button v-if="allowedActions.includes('APPROVE')" @click="handlePmlAction('approve')">Approve</f7-button>`.
+  - `<f7-button v-if="allowedActions.includes('REJECT')" color="red" @click="handlePmlAction('reject')">Reject</f7-button>`.
+  - If `allowedActions` is empty and the user is online, it could show a message "Memverifikasi aksi...". If offline, "Aksi tidak tersedia saat offline."
+- **Methods:**
+  - `async function fetchAllowedActions()`:
+    - This is called in `onMounted` for PMLs.
+    - It must call `ApiClient.getAllowedActions(props.assignmentId)`.
+    - On success, it populates `allowedActions.value`.
+  - `async function handlePmlAction(actionType: 'approve' | 'reject')`:
+    - If 'reject', it must show a dialog (`f7.dialog.prompt`) to get the rejection `notes`. If the notes are empty, cancel the action.
+    - Updates the assignment status locally (`Approved by PML` or `Rejected by PML`).
+    - Queues the action for upload via `OfflineService.queueForSync(...)`.
+    - Navigates back.
+
+**5. Fitur Inti & Mitigasi Risiko Fungsional (Diperbarui):**
+- **Auto-Save:**
+  - The `watch` function now watches `formState.responses` specifically, and on change, saves the entire `assignmentData` object (which contains the updated responses) back to `OfflineService`.
+- **Role-Based Field Access:**
+  - A field is disabled if `isPmlMode` is true, UNLESS the question schema's `editableBy` property includes the 'PML' role.
+
+**6. Arsitektur & Ketergantungan Lainnya (Tidak Berubah):**
+- Penggunaan Zod untuk validasi, penanganan master data, dll, tetap sama.
+- The engine must still support rosters, conditional logic (`showIf`, `requiredIf`), etc.
+"""
+
+
+--- END OF FILE: frontend-pwa\.gemini\commands\generate-form.toml ---
+
+
+
+========================================================================
+## FILE: frontend-pwa\.gemini\commands\generate-login-page.toml
+========================================================================
+
+# Perintah untuk menghasilkan halaman login pengguna, kini dengan dukungan untuk email/password tradisional dan Google Single Sign-On.
+description = "Generate the user login page component, now with support for both traditional email/password and Google Single Sign-On."
+
+prompt = """
+Generate a Vue 3 component file located at `src/views/LoginPage.vue`.
+
+**1. Technical Requirements (CRUCIAL):**
+- The component **MUST** use the `<script setup>` syntax with the Composition API.
+- The entire UI **MUST** be built using Framework7-Vue components. This includes `<f7-page>`, `<f7-login-screen>`, `<f7-list>`, `<f7-list-input>`, and `<f7-button>`.
+- All component state (like `username`, `password`, and `isLoading`) **MUST** be managed with reactive `ref()` variables.
+
+**2. Component Logic:**
+- Create `ref` variables for `username`, `password`, `isPasswordLoading`, and `isGoogleLoading`.
+- Import and use the `ApiClient` singleton.
+- Import and use the Pinia `authStore`.
+- Import and use `vue-router`.
+- Implement `handlePasswordLogin()`: a method for the traditional form submission. It should set `isPasswordLoading` to true, call the API, handle success (save token, navigate to '/home'), handle errors, and finally set `isPasswordLoading` to false.
+- Implement `handleGoogleLogin()`: a method for the Google login button. This method will be responsible for initiating the client-side Google authentication flow. Upon receiving a token from Google, it will call a specific method on the `ApiClient` (e.g., `loginWithGoogle(token)`). It should manage the `isGoogleLoading` state.
+
+**3. Template Structure:**
+- Use an `<f7-page login-screen>` as the root element.
+- Include a title like "Cerdas CAPI".
+- **Traditional Login Form:**
+  - Use an `<f7-list form>` for the username and password inputs.
+  - Use an `<f7-list-button>` for the "Login" button.
+    - This button should be disabled when `isPasswordLoading` or `isGoogleLoading` is true.
+    - It should show a preloader when `isPasswordLoading` is true.
+- **Separator:**
+  - Include a clear visual separator (e.g., `<f7-block-title>Atau</f7-block-title>`) between the two login methods.
+- **Google Login Button:**
+  - Use an `<f7-button large fill social="google" @click="handleGoogleLogin">Login dengan Google</f7-button>`.
+  - This button should be disabled when `isPasswordLoading` or `isGoogleLoading` is true.
+  - It should show a preloader when `isGoogleLoading` is true.
+- Display any login errors returned from the API in an `<f7-block>` or a toast notification.
+"""
+
+
+--- END OF FILE: frontend-pwa\.gemini\commands\generate-login-page.toml ---
+
+
+
+========================================================================
+## FILE: frontend-pwa\.gemini\commands\generate-offline-handler.toml
+========================================================================
+
+# Perintah untuk menghasilkan service handler offline (VERSI REFACTOR).
+description = "Generate the core OfflineService class for IndexedDB using Dexie.js, with an updated schema and methods to support the new UI flow."
+
+prompt = """
+Generate a TypeScript class named `OfflineService` located in `src/services/offline/OfflineService.ts`, using Dexie.js.
+
+**1. Database Schema Definition (Dexie - Diperbarui):**
+Define the Dexie database 'CapiDB' with the following stores:
+
+- **`assignments`**:
+  - `primary key`: `[activityId, assignmentId]`
+  - `indexes`: `[activityId, status]`
+
+- **`form_schemas` (BARU)**:
+  - `primary key`: `activityId` (Menyimpan satu skema aktif per kegiatan)
+  - `purpose`: Menyimpan objek form_schema secara terpisah agar mudah diakses.
+
+- **`sync_queue`**:
+  - `primary key`: `++id`
+  - `indexes`: `metadata.activityId`
+
+- **`master_data`**:
+  - `primary key`: `key` (string, e.g., 'KBLI_2020')
+  - This table is a simple **key-value document store** for holding large master data JSON objects. The key combines the type and version.
+  - This is a key-value store. The key itself should contain the `activityId` for activity-specific master data to ensure proper namespacing.
+
+- **`app_metadata`**:
+  - `primary key`: `key` (string, e.g., 'lastSyncTimestamp_kegiatan_123')
+  - `no indexes needed`
+  - This table is a simple key-value store for client-side app settings.
+
+- **`error_logs`**:
+  - `primary key`: `id` (auto-incrementing integer, `++id`)
+  - `indexes`: `timestamp`
+  - This table queues client-side error logs. It is global and does not need to be scoped by `activityId`.
+
+**2. Public Methods Implementation (Diperbarui):**
+Implement the following public methods.
+
+// --- Metode Pengecekan & Inisialisasi ---
+/**
+ * (BARU) Memeriksa dengan cepat apakah data untuk sebuah kegiatan sudah ada di IndexedDB.
+ * @param activityId - ID kegiatan.
+ * @returns {Promise<boolean>} True jika ada setidaknya satu assignment.
+ */
+- `async hasDataForActivity(activityId: string): Promise<boolean>`
+
+/**
+ * (BARU) Menghapus semua data yang terkait dengan satu kegiatan.
+ * Digunakan sebelum menjalankan "Sync Full Assignment". Harus transaksional.
+ * @param activityId - ID kegiatan.
+ */
+- `async clearDataForActivity(activityId: string): Promise<void>`
+
+// --- Metode Akses Data ---
+- `async storeAssignment(activityId: string, assignmentData: AssignmentResponse): Promise<void>`
+- `async getAssignmentById(activityId: string, assignmentId: string): Promise<AssignmentResponse | undefined>`
+- `async getAllAssignments(activityId: string): Promise<AssignmentResponse[]>`
+
+// --- Metode Form Schema ---
+/**
+ * (BARU) Menyimpan form schema untuk sebuah kegiatan.
+ * @param activityId
+ * @param schema
+ */
+- `async storeFormSchema(activityId: string, schema: FormSchema): Promise<void>`
+
+/**
+ * (BARU) Mengambil form schema yang tersimpan untuk sebuah kegiatan.
+ * @param activityId
+ * @returns {Promise<FormSchema | undefined>}
+ */
+- `async getFormSchema(activityId: string): Promise<FormSchema | undefined>`
+
+- `async queueForSync(action: SyncAction): Promise<void>`
+  # --> PERUBAHAN: Pastikan `action.metadata` sudah berisi `activityId`.
+  - Adds a new action to the `sync_queue` table. The `action.metadata` object MUST contain the relevant `activityId`.
+
+- `async getNextQueueItem(): Promise<SyncAction | undefined>`
+  - Retrieves the oldest 'pending' item from the `sync_queue`. The returned object will contain the `activityId` in its metadata.
+
+- `async updateQueueItemStatus(id: number, status: 'processing' | 'completed' | 'failed', error?: string): Promise<void>`
+  - Updates the status of an item in the `sync_queue`.
+
+- `async applyServerUpdates(activityId: string, updates: ServerUpdatePayload): Promise<void>`
+  - JSDoc harus diperjelas: Metode ini sekarang digunakan oleh SEMUA jenis sync download (Initial, Delta, Full) untuk memproses payload dan menyimpannya ke DB.
+
+- `async storeErrorLog(log: ErrorLog): Promise<void>`
+  - Adds a new error log to the global `error_logs` table.
+
+- `async getMetadata<T>(key: string): Promise<T | undefined>`
+  - Retrieves a value from the `app_metadata` table by its key.
+
+- `async setMetadata(key: string, value: any): Promise<void>`
+  - Performs an "upsert" on the `app_metadata` table.
+
+- `async storeMasterData(key: string, data: object): Promise<void>`
+  - Performs an "upsert" on the `master_data` table using the provided key.
+  - `async getMasterData<T>(key: string): Promise<T | undefined>`
+  - Retrieves a full master data object from the `master_data` table by its key.
+
+**3. Architectural Requirements:**
+- All methods that interact with Dexie must be `async`.
+- Ensure all database operations are non-blocking.
+- Include detailed JSDoc comments for each method.
+- The class should export a single, initialized instance of `OfflineService`.
+"""
+
+
+--- END OF FILE: frontend-pwa\.gemini\commands\generate-offline-handler.toml ---
+
+
+
+========================================================================
+## FILE: frontend-pwa\.gemini\commands\generate-sync-engine.toml
+========================================================================
+
+# Perintah untuk menghasilkan SyncEngine, otak sinkronisasi (VERSI REFACTOR).
+description = "Generate the refactored SyncEngine class, orchestrating multiple sync strategies (initial, delta, full) and a separate background upload process."
+
+prompt = """
+Generate a TypeScript class named `SyncEngine` located in `src/services/sync/SyncEngine.ts`. This class will orchestrate the entire two-way data synchronization process by coordinating between `OfflineService` and the refactored `ApiClient`.
+
+The engine must be a Singleton and manage its own state.
+
+**1. State Management:**
+- The engine must have a reactive state to track its status. Use a Pinia store or a simple reactive object. The state should differentiate between download and upload processes.
+- **States:** `idle`, `downloading_initial`, `downloading_delta`, `downloading_full`, `uploading`, `error`.
+- This state MUST be publicly readable so the UI can display fine-grained feedback (e.g., "Mengunduh data awal...", "Mengirim perubahan...").
+
+**2. Public Methods: User-Initiated Download Strategies**
+These methods are called directly by the UI (e.g., from the ActivityDashboardPage).
+
+/**
+ * (BARU) Mengelola pengunduhan data besar pertama kali untuk sebuah kegiatan.
+ * @param activityId
+ */
+- `async performInitialDownloadForActivity(activityId: string): Promise<void>`:
+  1. Set state to `downloading_initial`.
+  2. Check for internet connection.
+  3. Call `apiClient.performInitialDownload(activityId)`.
+  4. On success, pass the entire payload to `offlineService.applyServerUpdates(activityId, payload)`. This method should be transactional.
+  5. Save the current timestamp as the `lastSyncTimestamp` for this activity using `offlineService.setMetadata(...)`.
+  6. On error, set state to `error`.
+  7. In a `finally` block, reset state to `idle`.
+
+/**
+ * (BARU) Mengelola pengunduhan perubahan delta.
+ * @param activityId
+ */
+- `async performDeltaSync(activityId: string): Promise<void>`:
+  1. Set state to `downloading_delta`.
+  2. Get `lastSyncTimestamp` from `offlineService.getMetadata(...)`.
+  3. Call `apiClient.performDeltaSync(activityId, lastSyncTimestamp)`.
+  4. On success, pass the payload to `offlineService.applyServerUpdates(...)`.
+  5. Update the `lastSyncTimestamp`.
+  6. Reset state to `idle` in a `finally` block.
+
+/**
+ * (BARU) Mengelola proses overwrite sync.
+ * @param activityId
+ */
+- `async performFullOverwriteSync(activityId: string): Promise<void>`:
+  1. Set state to `downloading_full`.
+  2. Call `offlineService.clearDataForActivity(activityId)` to wipe local data first.
+  3. Call `apiClient.performFullResync(activityId)`.
+  4. On success, pass payload to `offlineService.applyServerUpdates(...)`.
+  5. Update the `lastSyncTimestamp`.
+  6. Reset state to `idle` in a `finally` block.
+
+**3. Private Method: Automatic Background Upload Process**
+This process runs independently of user actions, focusing only on sending data to the server.
+
+/**
+ * (REFACTORED) Proses internal yang berjalan otomatis untuk mengosongkan sync_queue.
+ */
+- `private async _processUploadQueue(): Promise<void>`:
+  1. Check if state is already `uploading`. If so, exit to prevent concurrency.
+  2. Set state to `uploading`.
+  3. In a loop, get a BATCH of pending actions from `OfflineService.getNextQueueItem()`.
+  4. If the queue is empty, break the loop.
+  5. Use a `switch` statement on the action `type` (e.g., 'SUBMIT_ASSIGNMENT') to call the appropriate `ApiClient` method (e.g., `apiClient.submitAssignmentBatch(...)`).
+  6. On success, mark the batch as `'completed'`.
+  7. On failure, handle retries or mark as `'failed'`.
+  8. Reset state to `idle` in a `finally` block.
+
+**4. Initialization and Triggers:**
+
+- `initialize()`:
+  - This method is called once when the app starts. It sets up triggers for the **background upload process only**.
+  - **`online` event listener:** When the browser comes online, call `this._processUploadQueue()`.
+  - **Scheduled Upload:** Use `setInterval` to periodically call `this._processUploadQueue()`. This ensures completed work is sent to the server regularly without user intervention.
+  - **(IMPORTANT)** The user-initiated download methods (`performInitialDownload`, etc.) are NOT triggered automatically. They are only called by the UI.
+
+**5. Architectural Requirements:**
+- Must be a singleton.
+- Must inject `OfflineService` and `ApiClient`.
+- Provide a clear way for the UI to subscribe to its state changes.
+- Include detailed JSDoc comments explaining the difference between the download strategies and the upload process.
+"""
+
+
+--- END OF FILE: frontend-pwa\.gemini\commands\generate-sync-engine.toml ---
+
+
+

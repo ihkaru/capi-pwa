@@ -1,0 +1,59 @@
+Generate a TypeScript class named `ApiClient` located in `src/services/api/ApiClient.ts`. This class will serve as a centralized, singleton wrapper around the Axios library to handle all HTTP communication with our Laravel backend.
+
+The client must be designed to support multi-survey contexts by passing a `surveyId` where necessary.
+
+**1. Axios Instance Configuration:**
+Create a private Axios instance within the class. This instance must be configured with the following:
+
+- **`baseURL`**: Read from an environment variable `VITE_API_BASE_URL`.
+- **`timeout`**: Set a default timeout of 15,000ms.
+- **`headers`**: Default headers should be `'Content-Type': 'application/json'` and `'Accept': 'application/json'`.
+
+**2. Axios Interceptors (Crucial Functionality):**
+Implement two interceptors for the Axios instance:
+
+- **A. Request Interceptor:**
+  - Before any request is sent, this interceptor must:
+    1. Retrieve the authentication token (Bearer Token) from a secure state management service (assume a function `authStore.getAccessToken()` is available).
+    2. If a token exists, dynamically add the `Authorization` header to the request: `Authorization: Bearer <token>`.
+
+- **B. Response Interceptor:**
+  - This interceptor will handle all API responses and errors globally:
+  - **On Success (2xx status code):** Simply return the response data (`response.data`).
+  - **On Error:** This is the most critical part. Implement logic to handle different error scenarios:
+    - **If the error is a `401 Unauthorized`:**
+      1. The request failed due to an expired access token.
+      2. The interceptor must attempt to get a new access token by calling a refresh token endpoint (assume a method `this.refreshToken()` exists).
+      3. If the refresh is successful, it should update the token in the auth store and then **automatically retry the original failed request** with the new token.
+      4. If the refresh token attempt also fails (e.g., with a 401 or 403), it means the user's session is truly expired. The interceptor should then trigger a global logout action (`authStore.logout()`) and redirect the user to the login page.
+    - **For other errors (4xx, 5xx):** Parse the error response from the Laravel backend and throw a structured error object that can be caught by the calling code.
+
+**3. Public Method Definitions:**
+Implement the following public methods, ensuring they are all `async` and properly typed. Each method should correspond to a specific API endpoint. Use placeholder types for now (e.g., `SurveyMetadata`, `AssignmentResponsePayload`).
+
+- `async login(credentials: LoginCredentials): Promise<AuthResponse>`
+- `async logout(): Promise<void>`
+- `async refreshToken(): Promise<RefreshTokenResponse>`
+
+// --- Methods for Onboarding & Two-Way Sync ---
+- `async getSurveyListForUser(): Promise<Survey[]>`
+- `async getInitialSurveyData(surveyId: string): Promise<InitialSurveyPayload>`
+  - This method will download all necessary initial data: form templates, master data versions, and the assignment list for a specific survey.
+
+- `async getUpdatesFromServer(surveyId: string, since: string): Promise<ServerUpdatePayload>`
+  - Fetches assignment status changes from the server since the last sync timestamp.
+
+// --- Methods for Data Submission ---
+- `async submitAssignmentBatch(surveyId: string, payload: AssignmentResponse[]): Promise<SyncResult>`
+  - Submits a batch of completed/updated assignments.
+
+- `async uploadAssignmentPhoto(surveyId: string, interviewId: string, photo: File): Promise<FileUploadResponse>`
+  - Handles file uploads using `multipart/form-data`. This requires overriding the default JSON headers for this specific request.
+
+// --- Methods for Diagnostics ---
+- `async postErrorLogs(logs: ErrorLog[]): Promise<void>`
+
+**4. Architectural Requirements:**
+- The class must be a singleton, exporting a single pre-initialized instance.
+- Use TypeScript interfaces for all method parameters and return types to ensure type safety.
+- Include detailed JSDoc comments explaining what each method does, its parameters, and what it returns.

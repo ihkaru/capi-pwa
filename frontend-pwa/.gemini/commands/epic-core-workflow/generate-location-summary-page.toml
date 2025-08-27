@@ -1,0 +1,73 @@
+# Perintah untuk menghasilkan Halaman Ringkasan Lokasi yang mengelompokkan assignment berdasarkan hierarki wilayah.
+description = "Generate the Location Summary Page, which groups assignments hierarchically by location codes, from level 5 down to level 2."
+
+prompt = """
+Generate a Vue 3 component file located at `src/views/LocationSummaryPage.vue`. The purpose of this page is to take a flat list of all assignments for an activity and display them grouped by geographical location in a hierarchical manner.
+
+**1. Technical Requirements:**
+- Use `<script setup>` with the Vue 3 Composition API.
+- UI must be built with Framework7-Vue components (`<f7-page>`, `<f7-navbar>`, `<f7-card>`, etc.).
+- Inject `OfflineService` to fetch all necessary data.
+- Use `useRoute` to get the `activityId`.
+
+**2. Component Logic (`<script setup>`):**
+- **State Management:**
+  - `const route = useRoute();`
+  - `const activityId = computed(() => route.params.activityId as string);`
+  - `const allAssignments = ref<AssignmentResponse[]>([]);`: To store the raw list of assignments.
+  - `const formSchema = ref<FormSchema | null>(null);`: To get the grouping levels and level definitions.
+  - `const masterSls = ref<MasterSlsData | null>(null);`: To store the master SLS data for mapping codes to names.
+  - `const isLoading = ref<boolean>(true);`
+
+- **Core Logic - Hierarchical Grouping (CRUCIAL):**
+  - Create a `computed` property named `groupedLocations`. This is the most complex part of the component.
+  - This computed property must:
+    1. Return an empty array if `formSchema.value`, `allAssignments.value`, or `masterSls.value` are not yet loaded.
+    2. Read the `assignment_table_grouping_levels` array from `formSchema.value` (e.g., `['level_5_code', 'level_4_code', ...]`).
+    3. Create a Map or an object to store the groups, e.g., `const groups = new Map();`.
+    4. Iterate through `allAssignments.value`. For each assignment:
+       a. Iterate through the `grouping_levels` from the schema.
+       b. Find the first, most specific level code that exists on the assignment (e.g., check `assignment.level_5_code` first).
+       c. If found, this code becomes the `groupKey`.
+       d. If a group for this `groupKey` doesn't exist in the `groups` map, create it. The group object should contain: `groupKey`, `groupLevel` (e.g., 'level_5_code'), `displayName`, `assignments` (an array), and stats (`total`, `submitted`, etc.).
+       e. **To get `displayName`**: Use the `groupKey` and `groupLevel` to look up the human-readable name from the `masterSls` data and the `level_definitions` in the schema. For example: "[SLS] 001 - Blok A".
+       f. Push the current assignment into the `group.assignments` array and update the group's stats.
+    5. Convert the `groups` map into an array and return it.
+
+- **`onMounted` Lifecycle Hook:**
+  - Call a `loadData` method.
+
+- **Methods:**
+  - `async function loadData()`:
+    1. Set `isLoading = true`.
+    2. In parallel (using `Promise.all`), fetch:
+       a. All assignments: `OfflineService.getAllAssignments(activityId.value)`.
+       b. The form schema: `OfflineService.getFormSchema(activityId.value)`.
+       c. The master SLS data: `OfflineService.getMasterData('MASTER_SLS')`.
+    3. Populate the respective `ref` variables.
+    4. Set `isLoading = false`.
+  
+  - `function getStatsChip(group): { text: string; color: string }`: A utility to return the text and color for a summary chip on the card, e.g., "5 / 10 Selesai".
+
+**3. Template Structure (`<template>`):**
+- **Root Element:** `<f7-page>`.
+- **Navbar:** `<f7-navbar title="Ringkasan per Wilayah" back-link="Dasbor">`.
+
+- **Main Content:**
+  - **Loading State:**
+    - Use `v-if="isLoading"` to display a skeleton loader (e.g., several `f7-card` skeletons).
+  - **Empty State:**
+    - Use `v-else-if="groupedLocations.length === 0"` with a message like "Tidak ada tugas yang dapat ditampilkan."
+  - **Location Groups List:**
+    - Use `v-else` to loop through the `groupedLocations` computed property.
+    - `v-for="group in groupedLocations" :key="group.groupKey"`.
+    - **Render each group as a `clickable` `<f7-card-header>` and `<f7-card-content>` inside an `<f7-card>`:**
+      - The entire card should be a link or have a click handler that navigates to the assignment table page for that group. The navigation URL must include the group key: `$router.push(`/activity/${activityId}/assignments/by-location/${group.groupKey}`)`.
+      - **Card Header (`<f7-card-header>`):**
+        - Display the `group.displayName` prominently.
+      - **Card Content (`<f7-card-content>`):**
+        - Display a summary of statistics for that group.
+        - Example: `<span>Total: {{ group.stats.total }}</span>`.
+        - Use an `<f7-chip>` to show progress, e.g., `<f7-chip :text="getStatsChip(group).text" :color="getStatsChip(group).color" />`.
+
+"""

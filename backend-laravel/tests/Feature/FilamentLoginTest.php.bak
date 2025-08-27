@@ -1,0 +1,50 @@
+<?php
+
+namespace Tests\Feature;
+
+use App\Models\Satker;
+use App\Models\User;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Foundation\Testing\WithFaker;
+use Filament\Testing\TestCase as FilamentTestCase; // Use Filament's TestCase
+use Filament\Facades\Filament; // Import Filament facade
+
+class FilamentLoginTest extends FilamentTestCase // Extend Filament's TestCase
+{
+    use RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->seed(); // This will call DatabaseSeeder
+
+        // Create a Satker
+        $satker = Satker::factory()->create();
+
+        // Create a Super Admin user and assign to the Satker
+        $user = User::factory()->create([
+            'email' => 'testadmin@example.com',
+            'password' => bcrypt('password'),
+            'satker_id' => $satker->id,
+        ]);
+        $user->assignRole('super_admin');
+
+        // Set the tenant context explicitly
+        Filament::setTenant($satker); // Use Filament facade to set tenant
+
+        // Log in the user for the test session
+        $this->actingAs($user, 'web');
+    }
+
+    /** @test */
+    public function a_super_admin_can_login_to_filament(): void
+    {
+        // The user is already actingAs and tenant is set in setUp()
+        $user = User::where('email', 'testadmin@example.com')->first(); // Re-fetch user if needed, or pass from setUp
+        $satker = Satker::first(); // Re-fetch satker if needed
+
+        $response = $this->get('/admin/' . $satker->id . '/users'); // Access the tenant-scoped URL
+
+        $response->assertOk();
+    }
+}

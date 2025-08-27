@@ -1,0 +1,71 @@
+# Perintah untuk menghasilkan komponen form engine (VERSI REFACTOR).
+description = "Generate the complete, dynamic Form Engine component, now with support for read-only prefilled data and online-aware action buttons for PMLs."
+
+prompt = """
+Generate a Vue 3 component file located at `src/views/InterviewFormPage.vue`. This component must function as a **generic and reusable Form Engine** driven entirely by a `formSchema` prop.
+
+**1. Arsitektur & Ketergantungan Inti (Tidak Berubah):**
+- Vue 3 Composition API with `<script setup>`.
+- UI: Exclusively Framework7-Vue components.
+- State: Pinia for auth/master data stores.
+- Offline: All data interactions through the `OfflineService` singleton.
+- Validation: Zod for schema-driven validation.
+
+**2. Props & State Management (Diperbarui):**
+- **Props:**
+  - `activityId: string` (required)
+  - `assignmentId: string` (required)
+- **Reactive State:**
+  - `const assignmentData = ref<AssignmentResponse | null>(null);`
+  - `const formSchema = ref<FormSchema | null>(null);`
+  - `const formState = reactive({ responses: {} });`: **PENTING:** Inisialisasi `formState` dengan objek `responses` bersarang. Ini memisahkan data isian PPL dari data root `assignment`.
+  - `const isPmlMode = ref<boolean>(false);`: Untuk membedakan mode entri PPL dan mode review PML.
+  - `const allowedActions = ref<string[]>([]);`: (BARU) Untuk menyimpan aksi yang diizinkan dari server untuk PML.
+  - `const isLoading = ref<boolean>(true);`
+
+- **`onMounted` Logic (Diperbarui):**
+  - Set `isLoading` to true.
+  - Fetch `assignmentData` and `formSchema` from `OfflineService`.
+  - Check user's role. If role is 'PML', set `isPmlMode.value = true`.
+  - Initialize `formState.responses` with the existing `assignmentData.responses`.
+  - **(BARU - Logika Mode PML):** If `isPmlMode.value` is true, call a new method `fetchAllowedActions()`.
+  - Set `isLoading` to false.
+
+**3. Rendering Dinamis & Tipe Pertanyaan (Dengan Penambahan):**
+- The `<template>` must recursively render the form based on `formSchema.pages`.
+- **(BARU) Penanganan Prefilled Data:**
+  - Introduce a new question `type: "prefilled_display"`.
+  - This type will be rendered as a **read-only** `<f7-list-input>` or simple text block.
+  - Its value should be read directly from `assignmentData.value.prefilled_data` based on a key in the question's schema. It is **NOT** part of the `formState.responses` object.
+
+**4. Logika Aksi & Tombol (Sangat Diperbarui):**
+- The `<template>` must display different action buttons at the bottom based on the mode.
+- **Tombol Mode PPL (`v-if="!isPmlMode"`):**
+  - A single "Submit" button.
+  - Calls a `submitForm` method which validates the `formState.responses`, updates the assignment status to `Submitted by PPPL`, and queues it for upload via `OfflineService`.
+- **Tombol Mode PML (`v-if="isPmlMode"`):**
+  - A block of buttons that are rendered conditionally using `v-for="action in allowedActions"`.
+  - Example: `<f7-button v-if="allowedActions.includes('APPROVE')" @click="handlePmlAction('approve')">Approve</f7-button>`.
+  - `<f7-button v-if="allowedActions.includes('REJECT')" color="red" @click="handlePmlAction('reject')">Reject</f7-button>`.
+  - If `allowedActions` is empty and the user is online, it could show a message "Memverifikasi aksi...". If offline, "Aksi tidak tersedia saat offline."
+- **Methods:**
+  - `async function fetchAllowedActions()`:
+    - This is called in `onMounted` for PMLs.
+    - It must call `ApiClient.getAllowedActions(props.assignmentId)`.
+    - On success, it populates `allowedActions.value`.
+  - `async function handlePmlAction(actionType: 'approve' | 'reject')`:
+    - If 'reject', it must show a dialog (`f7.dialog.prompt`) to get the rejection `notes`. If the notes are empty, cancel the action.
+    - Updates the assignment status locally (`Approved by PML` or `Rejected by PML`).
+    - Queues the action for upload via `OfflineService.queueForSync(...)`.
+    - Navigates back.
+
+**5. Fitur Inti & Mitigasi Risiko Fungsional (Diperbarui):**
+- **Auto-Save:**
+  - The `watch` function now watches `formState.responses` specifically, and on change, saves the entire `assignmentData` object (which contains the updated responses) back to `OfflineService`.
+- **Role-Based Field Access:**
+  - A field is disabled if `isPmlMode` is true, UNLESS the question schema's `editableBy` property includes the 'PML' role.
+
+**6. Arsitektur & Ketergantungan Lainnya (Tidak Berubah):**
+- Penggunaan Zod untuk validasi, penanganan master data, dll, tetap sama.
+- The engine must still support rosters, conditional logic (`showIf`, `requiredIf`), etc.
+"""
