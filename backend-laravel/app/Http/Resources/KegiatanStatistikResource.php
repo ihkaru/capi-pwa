@@ -8,6 +8,13 @@ use Carbon\Carbon;
 
 class KegiatanStatistikResource extends JsonResource
 {
+    public $additional;
+
+    public function __construct($resource, $additional = [])
+    {
+        parent::__construct($resource);
+        $this->additional = $additional;
+    }
     /**
      * Transform the resource into an array.
      *
@@ -51,6 +58,7 @@ class KegiatanStatistikResource extends JsonResource
             'user_role' => $userRole, // This needs to be accurate for the specific activity
             'status' => $status,
             'allow_new_assignments_from_pwa' => (bool)$this->allow_new_assignments_from_pwa,
+            'pml_id_for_ppl' => $this->additional['pml_id_for_ppl'] ?? null,
         ];
     }
 }

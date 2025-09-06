@@ -134,7 +134,11 @@ The high-level roadmap remains the same, with our focus still on the main CAPI f
 
 *   **Goal:** To build the `InterviewFormPage.vue` into a flexible engine capable of rendering complex surveys from a JSON schema.
 *   **Current Action:** The PPL data entry and PML data review workflows are now functionally complete. The form correctly renders and protects data based on user role and status. The PPL's repair cycle (displaying rejection notes, unlocking form, re-submission) is also considered complete.
-*   **Next Step:** Implement the "PPL New Assignment Creation" feature. This involves adding a Floating Action Button (FAB) to `AssignmentListPage.vue` (conditionally displayed for PPLs on activities that allow new assignment creation), which navigates directly to `InterviewFormPage.vue` in a "create mode". Initial data collection (respondent name, geotag, photo) will occur within `InterviewFormPage.vue` using the dynamic form engine, with geographical data pre-filled from the selected assignment group. The photo upload will follow a two-step process (upload first, then reference ID). This also requires adding a new `allow_new_assignments_from_pwa` boolean column to the `kegiatan_statistiks` table in the backend.
+*   **New Feature Implementation:**
+    *   **"Sync Full with Preservation"**: Implemented logic to preserve locally created `PENDING` assignments during a full data refresh from the server.
+    *   **"PPL Delete Action"**: Implemented a swipe-to-delete action on `AssignmentListPage.vue` allowing PPLs to delete their own `PENDING` assignments.
+    *   **New Status `SUBMITTED_LOCAL`**: Introduced a new status to clearly distinguish assignments that are locally submitted but not yet synced to the server.
+*   **Current Challenge:** Despite the implemented logic, `PENDING` assignments are still not being preserved by the "Sync Full" operation. The `syncFull` function's query for `PENDING` assignments is returning empty, even when such assignments are known to exist in the local Dexie.js database. This is the current focus of debugging.
 
 ## Crucial Lessons Learned
 
@@ -187,6 +191,18 @@ During the development of the Dynamic Form Engine, several crucial lessons were 
 10. **UI Actions Must Be State-Aware:**
     *   **Mistake:** Clicking a synced image preview triggered the camera upload instead of a viewer.
     *   **Lesson:** The same UI element can have different behaviors based on context. The `handleImageClick` function should check the state (e.g., `isQuestionDisabled` or if the image `src` is a `data:` URL vs. an `http` URL) to decide whether to open the Photo Browser (for viewing) or the camera (for editing).
+
+14. **Dexie.js and Reactive Objects:**
+    *   **Mistake:** Subtle data persistence issues where properties (like `status`) were not correctly stored or queried in Dexie.js.
+    *   **Lesson:** Always explicitly "plainify" reactive objects (e.g., from Vue's `ref` or `reactive`) using `JSON.parse(JSON.stringify(myObject))` before storing them in Dexie.js. This ensures Dexie stores a clean, non-reactive JavaScript object, preventing unexpected behavior during storage and retrieval.
+
+15. **Clear Status Definitions and Transitions:**
+    *   **Mistake:** Ambiguity in status definitions (e.g., `Assigned` being used for both server-assigned and locally-submitted-but-unsynced assignments).
+    *   **Lesson:** Define a clear and distinct set of statuses for local data (e.g., `PENDING` for unsubmitted new assignments, `SUBMITTED_LOCAL` for locally submitted but not yet synced assignments) to accurately track the lifecycle of data that originates offline and transitions to online. This prevents incorrect data handling during synchronization and improves debugging clarity.
+
+16. **Environmental Debugging Challenges:**
+    *   **Mistake:** Code changes (especially logging) were not consistently applied or picked up by the development environment.
+    *   **Lesson:** When debugging persistent issues, especially those involving local file changes, always ensure the development server is fully restarted after every code modification. If problems persist, manually verify file content to rule out caching or build system issues. This prevents prolonged debugging due to outdated code being run.
 
 ## Mitigation Strategy for Duplication
 

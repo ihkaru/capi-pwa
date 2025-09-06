@@ -30,7 +30,7 @@
         </f7-card-content>
         <f7-card-footer>
           <f7-link></f7-link>
-          <f7-button small fill @click="navigateToGroup(groupName)">Lihat Detail</f7-button>
+          <f7-button small fill @click="navigateToGroup(groupName, groupData.levelCodes)">Lihat Detail</f7-button>
         </f7-card-footer>
       </f7-card>
 
@@ -44,6 +44,7 @@ import { onMounted } from 'vue';
 import { f7 } from 'framework7-vue';
 import { useDashboardStore } from '../js/stores/dashboardStore';
 import { getBadgeColorForStatus } from '../js/utils/statusColors';
+import { Assignment } from '../js/services/offline/ActivityDB';
 
 const props = defineProps({
   f7route: Object,
@@ -62,11 +63,12 @@ onMounted(() => {
   console.log(dashboardStore.groupedAssignments);
 });
 
-function navigateToGroup(groupName: string) {
+function navigateToGroup(groupName: string, levelCodes: Partial<Assignment>) {
   const activityId = props.f7route?.params?.activityId;
   if (activityId) {
     const encodedGroupName = encodeURIComponent(groupName);
-    f7.views.main.router.navigate(`/activity/${activityId}/group/${encodedGroupName}/`);
+    const encodedLevelCodes = encodeURIComponent(JSON.stringify(levelCodes));
+    f7.views.main.router.navigate(`/activity/${activityId}/group/${encodedGroupName}/?levelCodes=${encodedLevelCodes}`);
   }
 }
 </script>

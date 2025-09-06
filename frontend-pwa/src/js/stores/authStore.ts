@@ -10,6 +10,7 @@ interface User {
   id: string;
   name: string;
   email: string;
+  satker_id: string | null; // Add satker_id
   // role is no longer here, it's contextual to the activity
 }
 

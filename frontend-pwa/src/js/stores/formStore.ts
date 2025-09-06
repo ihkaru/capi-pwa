@@ -2,8 +2,9 @@ import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
 import { activityDB, Assignment, AssignmentResponse } from '@/js/services/offline/ActivityDB';
 import { useAuthStore } from './authStore';
+import { useDashboardStore } from './dashboardStore';
 import { executeLogic } from '@/js/services/logicEngine';
-import { syncEngine } from '@/js/services/sync/SyncEngine';
+import syncEngine  from '@/js/services/sync/SyncEngine';
 import apiClient from '@/js/services/ApiClient';
 
 interface FormState {
@@ -11,20 +12,21 @@ interface FormState {
     assignmentResponse: AssignmentResponse | null;
     formSchema: any | null;
     status: 'loading' | 'ready' | 'error';
-    // IMPROVEMENT: Add an error property to store specific error messages for the UI.
     error: string | null;
+    isNew: boolean;
 }
 
 export const useFormStore = defineStore('form', () => {
     const authStore = useAuthStore();
+    const dashboardStore = useDashboardStore();
 
     const state = ref<FormState>({
         assignment: null,
         assignmentResponse: null,
         formSchema: null,
         status: 'loading',
-        // IMPROVEMENT: Initialize the error state.
         error: null,
+        isNew: false,
     });
 
     const touchedFields = ref(new Set<string>());
@@ -159,85 +161,137 @@ export const useFormStore = defineStore('form', () => {
         return map;
     });
 
+    async function initializeNewAssignment(activityId: string, prefilledGeoData: any) {
+        const user = authStore.user?.id;
+        if (!user) {
+            state.value.error = 'User not authenticated.';
+            state.value.status = 'error';
+            return;
+        }
+
+        const newAssignmentId = crypto.randomUUID();
+        const now = new Date().toISOString();
+
+        // Helper to get label from masterSls
+        const getSlsLabel = (codeFull: string | null | undefined) => {
+            if (!codeFull) return null;
+            const sls = dashboardStore.masterSls.find(s => s.sls_id === codeFull);
+            return sls ? sls.nama : null;
+        };
+
+        state.value.assignment = {
+            id: newAssignmentId,
+            kegiatan_statistik_id: activityId,
+            ppl_id: user,
+            pml_id: dashboardStore.activity?.pml_id_for_ppl || null,
+            satker_id: authStore.user?.satker_id || null,
+            assignment_label: prefilledGeoData.assignment_label || 'Penugasan Baru', // Use prefilled label if available
+            prefilled_data: { ...prefilledGeoData },
+            level_1_code: prefilledGeoData.level_1_code || null,
+            level_1_label: prefilledGeoData.level_1_label || getSlsLabel(prefilledGeoData.level_1_code_full) || null,
+            level_2_code: prefilledGeoData.level_2_code || null,
+            level_2_label: prefilledGeoData.level_2_label || getSlsLabel(prefilledGeoData.level_2_code_full) || null,
+            level_3_code: prefilledGeoData.level_3_code || null,
+            level_3_label: prefilledGeoData.level_3_label || getSlsLabel(prefilledGeoData.level_3_code_full) || null,
+            level_4_code: prefilledGeoData.level_4_code || null,
+            level_4_label: prefilledGeoData.level_4_label || getSlsLabel(prefilledGeoData.level_4_code_full) || null,
+            level_5_code: prefilledGeoData.level_5_code || null,
+            level_5_label: prefilledGeoData.level_5_label || getSlsLabel(prefilledGeoData.level_5_code_full) || null,
+            level_6_code: prefilledGeoData.level_6_code || null,
+            level_6_label: prefilledGeoData.level_6_label || getSlsLabel(prefilledGeoData.level_6_code_full) || null,
+            level_4_code_full: prefilledGeoData.level_4_code_full || null,
+            level_6_code_full: prefilledGeoData.level_6_code_full || null,
+            status: 'PENDING',
+            created_at: now,
+            updated_at: now,
+            user_id: user,
+        };
+
+        state.value.assignmentResponse = {
+            assignment_id: newAssignmentId,
+            user_id: user,
+            status: 'PENDING',
+            version: 1,
+            form_version_used: dashboardStore.formSchema?.form_version || 1,
+            responses: {},
+            created_at: now,
+            updated_at: now,
+        };
+
+        // Immediately save to Dexie and update dashboard store
+        const plainAssignment = JSON.parse(JSON.stringify(state.value.assignment));
+        const plainAssignmentResponse = JSON.parse(JSON.stringify(state.value.assignmentResponse));
+
+        await activityDB.assignments.add(plainAssignment);
+        await activityDB.assignmentResponses.add(plainAssignmentResponse);
+        dashboardStore.addAssignment(plainAssignment);
+
+
+        // Load form schema from DexieDB
+        const formSchemaRecord = await activityDB.formSchemas.get([activityId, user]);
+        if (!formSchemaRecord) {
+            state.value.error = `Form schema for activity ${activityId} not found in local DB. Please sync.`;
+            state.value.status = 'error';
+            return;
+        }
+        state.value.formSchema = formSchemaRecord.schema;
+        
+        state.value.status = 'ready';
+        state.value.isNew = true;
+        touchedFields.value.clear();
+    }
+
     async function loadAssignmentFromLocalDB(assignmentId: string) {
-        console.log(`[formStore] Starting to load assignment ${assignmentId}`);
         state.value.status = 'loading';
         state.value.error = null;
         touchedFields.value.clear();
-        try {
-            const currentUser = authStore.user;
-            if (!currentUser?.id) {
-                throw new Error('User not authenticated. Cannot load assignment.');
-            }
-            console.log(`[formStore] Current user is: ${currentUser.email}, activeRole: ${authStore.activeRole}`);
 
+        try {
+            const user = authStore.user;
+            if (!user?.id) {
+                throw new Error('User not authenticated.');
+            }
 
             const assignment = await activityDB.assignments.get(assignmentId);
             if (!assignment) {
-                throw new Error(`Assignment with ID ${assignmentId} not found in local DB.`);
+                throw new Error(`Assignment with ID ${assignmentId} not found.`);
             }
-            state.value.assignment = assignment;
-            console.log('[formStore] Found assignment:', assignment);
 
-            const formSchemaRecord = await activityDB.formSchemas.get([assignment.kegiatan_statistik_id, currentUser.id]);
+            const formSchemaRecord = await activityDB.formSchemas.get([assignment.kegiatan_statistik_id, user.id]);
             if (!formSchemaRecord) {
                 throw new Error(`Form schema for activity ${assignment.kegiatan_statistik_id} not found.`);
             }
-            state.value.formSchema = formSchemaRecord.schema;
-            console.log('[formStore] Found form schema version:', formSchemaRecord.schema?.form_version);
 
             let response = await activityDB.assignmentResponses.get(assignmentId);
-            console.log(`[formStore] Found existing response in DB for ${assignmentId}:`, response ? JSON.parse(JSON.stringify(response)) : 'null');
-
             if (!response) {
-                // If no response exists, the behavior depends on the user's role.
                 if (authStore.activeRole === 'PML') {
-                    // A PML should NEVER create a response. They only review existing ones.
-                    // If it's not found, it's a data sync error.
-                    console.error(`[formStore] PML ${currentUser.email} tried to open an assignment (${assignmentId}) with no existing response. This should not happen.`);
-                    throw new Error(`Data wawancara untuk penugasan ini belum tersedia di perangkat Anda. Mohon lakukan sinkronisasi terlebih dahulu.`);
-                } else {
-                    // For a PPL, create a new response if it's their first time opening it.
-                    console.log(`[formStore] No response found for PPL. Creating a new one for assignment ${assignmentId}.`);
-                    const newResponse: AssignmentResponse = {
-                        assignment_id: assignmentId,
-                        user_id: currentUser.id,
-                        status: 'Opened',
-                        version: 1,
-                        form_version_used: state.value.formSchema?.form_version || 1,
-                        responses: {},
-                        created_at: new Date().toISOString(),
-                        updated_at: new Date().toISOString(),
-                    };
-                    await activityDB.assignmentResponses.put(newResponse);
-                    response = newResponse;
-                    console.log(`[formStore] New response created and saved.`);
+                    throw new Error('Data for this assignment is not yet available. Please sync.');
                 }
-            }
-            // FIX: The 'responses' property from the backend might be a JSON string. Parse it.
-            if (response && typeof response.responses === 'string') {
-                try {
-                    console.log('[formStore] Responses field is a string. Attempting to parse...');
-                    response.responses = JSON.parse(response.responses);
-                    console.log('[formStore] Responses field parsed successfully.');
-                } catch (e) {
-                    console.error('[formStore] Failed to parse responses JSON string:', e);
-                    // Handle error, maybe by setting responses to an empty object
-                    response.responses = {};
-                }
+                response = {
+                    assignment_id: assignmentId,
+                    user_id: user.id,
+                    status: 'Opened',
+                    version: 1,
+                    form_version_used: formSchemaRecord.schema?.form_version || 1,
+                    responses: {},
+                    created_at: new Date().toISOString(),
+                    updated_at: new Date().toISOString(),
+                };
+                await activityDB.assignmentResponses.put(response);
             }
 
+            if (typeof response.responses === 'string') {
+                response.responses = JSON.parse(response.responses);
+            }
+
+            state.value.assignment = assignment;
             state.value.assignmentResponse = response;
-            console.log(`[formStore] Final assignmentResponse state:`, JSON.parse(JSON.stringify(response)));
-            console.log(`[formStore] Current formSchema:`, JSON.parse(JSON.stringify(state.value.formSchema)));
-            console.log(`[formStore] Responses object for binding:`, JSON.parse(JSON.stringify(responses.value)));
-
+            state.value.formSchema = formSchemaRecord.schema;
+            state.value.isNew = false;
             state.value.status = 'ready';
-            console.log(`[formStore] Store is ready.`);
 
         } catch (error: any) {
-            console.error('[formStore] Failed to load assignment from local DB:', error);
-            state.value.error = error.message || 'An unknown error occurred while loading the assignment.';
+            state.value.error = error.message;
             state.value.status = 'error';
         }
     }
@@ -251,7 +305,7 @@ export const useFormStore = defineStore('form', () => {
                     current[key] = value;
                 } else {
                     if (!current[key]) {
-                        current[key] = isNaN(parseInt(keys[index+1])) ? {} : [];
+                        current[key] = isNaN(parseInt(keys[index + 1])) ? {} : [];
                     }
                     current = current[key];
                 }
@@ -260,248 +314,62 @@ export const useFormStore = defineStore('form', () => {
     }
 
     async function saveResponsesToLocalDB() {
-        if (state.value.assignmentResponse) {
+        if (state.value.assignmentResponse && state.value.assignment) {
+            console.log('[saveResponsesToLocalDB] About to save assignment. Current status is:', state.value.assignment.status);
             state.value.assignmentResponse.updated_at = new Date().toISOString();
-            // Use JSON methods to ensure we're saving a plain object, not a Vue proxy
-            const plainResponseObject = JSON.parse(JSON.stringify(state.value.assignmentResponse));
-            await activityDB.assignmentResponses.put(plainResponseObject);
+            
+            // Also update the parent assignment's updated_at timestamp
+            state.value.assignment.updated_at = new Date().toISOString();
+
+            const plainResponse = JSON.parse(JSON.stringify(state.value.assignmentResponse));
+            const plainAssignment = JSON.parse(JSON.stringify(state.value.assignment));
+
+            await activityDB.assignmentResponses.put(plainResponse);
+            await activityDB.assignments.put(plainAssignment);
+            
+            console.log('Successfully saved responses and updated assignment timestamp in local DB.');
         }
     }
 
-    async function submitAssignment() {
-        if (!state.value.assignment || !state.value.assignmentResponse || !state.value.formSchema) {
-            throw new Error('Cannot submit, essential data is not loaded.');
+    async function submit() {
+        if (!state.value.assignment || !state.value.assignmentResponse || !authStore.user) {
+            throw new Error('Cannot submit, essential data is missing.');
         }
 
-        const assignmentId = state.value.assignment.id;
-        console.log('[formStore] Responses before submission:', JSON.parse(JSON.stringify(state.value.assignmentResponse.responses)));
-        const responsesCopy = JSON.parse(JSON.stringify(state.value.assignmentResponse.responses));
-
-        const findQuestionsByType = (type: string) => {
-            const questionsFound: any[] = [];
-            const traverse = (questions: any[]) => {
-                if (!questions) return;
-                for (const q of questions) {
-                    if (q.type === type) {
-                        questionsFound.push(q);
-                    }
-                    if (q.type === 'roster' && q.questions) {
-                        traverse(q.questions);
-                    }
-                }
-            };
-            // Ensure pages and questions exist before trying to flatMap
-            state.value.formSchema.pages?.forEach((p: any) => traverse(p.questions));
-            return questionsFound;
-        };
-
-        const imageQuestions = findQuestionsByType('image');
-
-        for (const imageQuestion of imageQuestions) {
-            const imageId = imageQuestion.id;
-            const base64Data = responsesCopy[imageId];
-
-            if (base64Data && base64Data.startsWith('data:image')) {
-                try {
-                    const imageFile = await dataURLtoFile(base64Data, `${imageId}.jpg`);
-                    const uploadResponse = await apiClient.uploadPhoto(assignmentId, imageFile);
-                    responsesCopy[imageId] = uploadResponse.fileId;
-                } catch (error) {
-                    console.error(`Failed to upload photo for question ${imageId}:`, error);
-                    // IMPROVEMENT: Provide a more user-friendly error message.
-                    throw new Error(`Gagal mengunggah foto untuk pertanyaan "${imageQuestion.label}". Silakan coba lagi.`);
-                }
-            }
-        }
-
-        state.value.assignmentResponse.responses = responsesCopy;
-        state.value.assignmentResponse.status = 'Submitted by PPL';
-        state.value.assignmentResponse.updated_at = new Date().toISOString();
-
-        await saveResponsesToLocalDB();
-
-        const assignmentResponseToSend = JSON.parse(JSON.stringify(state.value.assignmentResponse));
+        const isNew = state.value.isNew;
+        const assignment = JSON.parse(JSON.stringify(state.value.assignment));
+        const assignmentResponse = JSON.parse(JSON.stringify(state.value.assignmentResponse));
         
-        // FIX: Add detailed logging and a try-catch block to diagnose the stringification issue.
-        try {
-            console.log('[formStore] Type of responses BEFORE stringify:', typeof assignmentResponseToSend.responses);
-            console.log('[formStore] Value of responses BEFORE stringify:', JSON.stringify(assignmentResponseToSend.responses, null, 2)); // Pretty print for readability
-            
-            // assignmentResponseToSend.responses = JSON.stringify(assignmentResponseToSend.responses);
-            
-            console.log('[formStore] Type of responses AFTER stringify:', typeof assignmentResponseToSend.responses);
-            console.log('[formStore] Value of responses AFTER stringify:', JSON.stringify(assignmentResponseToSend.responses, null, 2));
-        } catch(e) {
-            console.error('[formStore] CRITICAL: Failed to stringify responses object.', e);
-            console.error('[formStore] Object that failed to stringify:', assignmentResponseToSend.responses);
-            throw new Error('Gagal memproses data formulir untuk pengiriman.');
+        if (isNew) {
+            assignmentResponse.status = 'SUBMITTED_LOCAL'; // New status for locally submitted but not yet synced
+            assignment.status = 'SUBMITTED_LOCAL'; // Also update assignment status for consistency in payload
+        } else {
+            assignmentResponse.status = 'Submitted by PPL'; // For existing assignments, status becomes 'Submitted by PPL'
         }
+        assignmentResponse.updated_at = new Date().toISOString();
+        
+        await activityDB.assignmentResponses.put(assignmentResponse);
 
-
-        const payload = {
-            activityId: state.value.assignment.kegiatan_statistik_id,
-            assignmentResponse: assignmentResponseToSend,
-        };
-
-        await syncEngine.queueForSync('submitAssignment', payload);
+        await syncEngine.queueForSync(isNew ? 'createAssignment' : 'submitAssignment', {
+            assignment,
+            assignmentResponse,
+            activityId: assignment.kegiatan_statistik_id, // Add activityId for submitAssignment
+        });
     }
-
-    async function approveAssignment() {
-        if (!state.value.assignment || !state.value.assignmentResponse) {
-            throw new Error('Cannot approve, essential data is not loaded.');
-        }
-        if (authStore.activeRole !== 'PML') {
-            throw new Error('Only PML can approve an assignment.');
-        }
-
-        state.value.assignmentResponse.status = 'Approved by PML';
-        await saveResponsesToLocalDB();
-
-        const payload = {
-            assignmentId: state.value.assignment.id,
-            status: 'Approved by PML',
-        };
-
-        await syncEngine.queueForSync('approveAssignment', payload);
-    }
-
-    async function rejectAssignment(notes: string) {
-        if (!state.value.assignment || !state.value.assignmentResponse) {
-            throw new Error('Cannot reject, essential data is not loaded.');
-        }
-        if (authStore.activeRole !== 'PML') {
-            throw new Error('Only PML can reject an assignment.');
-        }
-        // Notes are optional for reject
-
-        state.value.assignmentResponse.status = 'Rejected by PML';
-        // IMPROVEMENT: Store rejection notes in the assignmentResponse if schema allows
-        await saveResponsesToLocalDB();
-
-        const payload = {
-            assignmentId: state.value.assignment.id,
-            status: 'Rejected by PML',
-            notes: notes,
-        };
-
-        await syncEngine.queueForSync('rejectAssignment', payload);
-    }
-
-    async function revertApproval(notes: string) {
-        if (!state.value.assignment || !state.value.assignmentResponse) {
-            throw new Error('Cannot revert approval, essential data is not loaded.');
-        }
-        if (authStore.activeRole !== 'PML') {
-            throw new Error('Only PML can revert an approval.');
-        }
-        // Notes are optional for revert, but good practice to encourage
-
-        state.value.assignmentResponse.status = 'Submitted by PPL';
-        // Optionally, store notes for revert action
-        if (notes) {
-            state.value.assignmentResponse.notes = notes; // Assuming 'notes' field exists
-        }
-        await saveResponsesToLocalDB();
-
-        const payload = {
-            assignmentId: state.value.assignment.id,
-            status: 'Submitted by PPL',
-            notes: notes,
-        };
-
-        await syncEngine.queueForSync('revertApproval', payload);
-    }
-
-    function addRosterItem(rosterQuestionId: string) {
-        if (state.value.assignmentResponse) {
-            if (!state.value.assignmentResponse.responses[rosterQuestionId]) {
-                state.value.assignmentResponse.responses[rosterQuestionId] = [];
-            }
-            state.value.assignmentResponse.responses[rosterQuestionId].push({});
-        }
-    }
-
-    function removeRosterItem(rosterQuestionId: string, index: number) {
-        if (state.value.assignmentResponse?.responses[rosterQuestionId]) {
-            state.value.assignmentResponse.responses[rosterQuestionId].splice(index, 1);
-        }
-    }
-
-    function touchField(questionId: string) {
-        // IMPROVEMENT: Directly adding to the Set is sufficient for Vue's reactivity.
-        if (!touchedFields.value.has(questionId)) {
-            touchedFields.value.add(questionId);
-        }
-    }
-
+    
     return {
         state,
         pages,
         responses,
         validationSummary,
         validationMap,
+        initializeNewAssignment,
         loadAssignmentFromLocalDB,
         updateResponse,
         saveResponsesToLocalDB,
-        addRosterItem,
-        removeRosterItem,
-        touchField,
-        submitAssignment,
-        approveAssignment,
-        rejectAssignment,
-        revertApproval,
+        submit,
+        touchField(questionId: string) {
+            touchedFields.value.add(questionId);
+        },
     };
 });
-
-/**
- * FIX: Refactored function to be fully async and return a Promise<File> for type safety.
- * Converts a data URL string to a File object. Handles SVG to PNG conversion.
- * @param dataurl The data URL to convert.
- * @param filename The desired filename for the output File.
- * @returns A Promise that resolves with the created File object.
- */
-async function dataURLtoFile(dataurl: string, filename: string): Promise<File> {
-    const arr = dataurl.split(',');
-    if (arr.length < 2) {
-        throw new Error('Invalid data URL');
-    }
-    const mimeMatch = arr[0].match(/:(.*?);/);
-    if (!mimeMatch) {
-        throw new Error('Could not parse MIME type from data URL');
-    }
-    let mime = mimeMatch[1];
-    const bstr = atob(arr[1]);
-    let n = bstr.length;
-    const u8arr = new Uint8Array(n);
-
-    while (n--) {
-        u8arr[n] = bstr.charCodeAt(n);
-    }
-
-    if (mime === 'image/svg+xml') {
-        return new Promise((resolve, reject) => {
-            const img = new Image();
-            img.onload = () => {
-                const canvas = document.createElement('canvas');
-                canvas.width = img.width;
-                canvas.height = img.height;
-                const ctx = canvas.getContext('2d');
-                if (!ctx) {
-                    return reject(new Error('Could not get canvas context for SVG conversion'));
-                }
-                ctx.drawImage(img, 0, 0);
-                canvas.toBlob(blob => {
-                    if (blob) {
-                        resolve(new File([blob], filename.replace(/\.svg$/i, '.png'), { type: 'image/png' }));
-                    } else {
-                        reject(new Error('Canvas toBlob failed during SVG conversion'));
-                    }
-                }, 'image/png');
-            };
-            img.onerror = (err) => reject(new Error(`Image loading failed for SVG conversion: ${err}`));
-            img.src = dataurl;
-        });
-    }
-
-    return new File([u8arr], filename, { type: mime });
-}

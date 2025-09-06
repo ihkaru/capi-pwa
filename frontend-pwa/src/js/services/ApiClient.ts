@@ -34,6 +34,8 @@ interface Activity {
   status: string;
   start_date: string;
   end_date: string;
+  allow_new_assignments_from_pwa?: boolean; // Add this if not already there
+  pml_id_for_ppl?: string | null; // ADD THIS LINE
 }
 
 interface FormSchema {
@@ -172,7 +174,7 @@ class ApiClient {
             return this.axiosInstance(originalRequest);
           } catch (err) {
             this.processFailedQueue(err, null);
-            authStore.setToken(null);
+            authStore.clearAuthState();
             // In a real app, you would redirect to the login page
             return Promise.reject(err);
           } finally {
@@ -215,8 +217,7 @@ class ApiClient {
       const response: AuthResponse = await this.axiosInstance.post('/login', credentials);
       const { access_token, refresh_token, user } = response; // <-- PERBAIKAN
       const authStore = useAuthStore();
-      authStore.setToken(access_token);
-      authStore.setUser(user);
+      authStore.setAuthState(access_token, user);
       if (refresh_token) {
         localStorage.setItem('refreshToken', refresh_token);
       }
@@ -320,8 +321,7 @@ class ApiClient {
     });
     const { access_token, refresh_token, user } = response.data;
     const authStore = useAuthStore();
-    authStore.setToken(access_token);
-    authStore.setUser(user); // Update user data if it comes with refresh
+    authStore.setAuthState(access_token, user); // Update user data if it comes with refresh
     if (refresh_token) {
       localStorage.setItem('refreshToken', refresh_token);
     }

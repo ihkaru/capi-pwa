@@ -266,12 +266,23 @@ Ini adalah mode sinkronisasi utama yang akan sering digunakan oleh PPL dan PML u
   - **Perubahan isian kuesioner** yang mungkin dilakukan oleh PML atau Admin (jika diizinkan oleh alur kerja).
 - **Tujuan:** Memperbarui PWA dengan data terbaru dari server secara efisien, tanpa mengunduh ulang seluruh dataset. Hemat waktu dan kuota data.
 
-### 6.3. Sync Full Assignment (Aksi Pengguna - Overwrite Download)
+### 6.3. Sync Full Assignment (Aksi Pengguna - Overwrite Download with Preservation)
 
-Ini adalah mode sinkronisasi "darurat" atau "reset" yang digunakan dalam skenario khusus.
+Ini adalah mode sinkronisasi "darurat" atau "reset" yang digunakan dalam skenario khusus, dengan mekanisme pengaman untuk data yang baru dibuat secara lokal.
 
 - **Pemicu:** Aksi ini dipicu secara manual oleh pengguna melalui tombol "Sync Full Assignment", yang akan menampilkan dialog konfirmasi tegas.
 - **Apa yang Terjadi:**
-  1.  PWA akan menghapus semua data `Assignment` dan `Assignment Response` untuk kegiatan yang sedang aktif dari database lokal (IndexedDB).
-  2.  PWA kemudian akan mengunduh ulang **seluruh** daftar assignment dan isiannya dari server, seolah-olah ini adalah pertama kalinya pengguna mempersiapkan kegiatan tersebut.
-- **Tujuan:** Menyelesaikan masalah data yang mungkin rusak atau tidak sinkron di PWA dengan cara menimpanya dengan versi data yang "pasti benar" dari server.
+  1.  **Preservasi Data Lokal Baru:** PWA pertama-tama akan mencari dan menyimpan sementara semua `Assignment` yang dibuat secara lokal dan belum pernah disinkronkan (misalnya, yang memiliki status `PENDING`).
+  2.  **Pembersihan Data Lama:** PWA akan menghapus semua data `Assignment` dan `Assignment Response` lainnya untuk kegiatan yang sedang aktif dari database lokal (IndexedDB).
+  3.  **Unduh Ulang Data Server:** PWA kemudian akan mengunduh ulang **seluruh** daftar assignment dan isiannya dari server.
+  4.  **Re-integrasi Data Lokal:** Setelah unduhan dari server selesai, PWA akan menggabungkan kembali data `Assignment` baru yang telah disimpan sementara ke dalam daftar assignment yang sudah diperbarui.
+- **Tujuan:** Menyelesaikan masalah data yang mungkin rusak atau tidak sinkron di PWA dengan cara menimpanya dengan versi data dari server, **sambil memastikan pekerjaan baru yang belum terkirim tidak hilang**.
+
+### 6.4. Penghapusan Assignment Lokal oleh PPL
+
+- **Tujuan:** Untuk memperbaiki kesalahan jika PPL secara tidak sengaja membuat `Assignment` baru.
+- **Kewenangan:** Aksi ini hanya dapat dilakukan oleh pengguna dengan peran `PPL`.
+- **Kondisi:** Sebuah `Assignment` hanya dapat dihapus jika memenuhi dua syarat: 1) Dibuat secara lokal oleh PPL, dan 2) Statusnya **belum** menjadi `Submitted by PPL`. Secara teknis, ini berlaku untuk `Assignment` dengan status lokal `PENDING`.
+- **Mekanisme:** Aksi penghapusan diinisiasi melalui gestur geser (swipe action) pada baris `Assignment` di halaman `AssignmentListPage`.
+- **Konfirmasi:** Sebelum proses penghapusan dieksekusi, sebuah dialog konfirmasi **wajib** ditampilkan untuk mencegah kehilangan data yang tidak disengaja.
+- **Implikasi Teknis:** Aksi ini hanya menghapus data dari database lokal PWA (IndexedDB). Tidak ada interaksi dengan server yang diperlukan, karena `Assignment` tersebut belum pernah ada di backend.

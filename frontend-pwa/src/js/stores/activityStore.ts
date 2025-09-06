@@ -50,13 +50,11 @@ export const useActivityStore = defineStore('activity', () => {
       f7.dialog.preloader('Memperbarui Kegiatan...');
       const fetchedActivities = await apiClient.getActivitiesForUser();
 
-      // Hapus data LAMA milik pengguna ini sebelum memasukkan yang BARU
-      await activityDB.activities.where('user_id').equals(currentUserId.value).delete();
-
       if (fetchedActivities && fetchedActivities.length > 0) {
         const activitiesWithUserId = fetchedActivities.map(activity => ({ ...activity, user_id: currentUserId.value }));
+        // Use bulkPut to non-destructively update local data
         await activityDB.activities.bulkPut(activitiesWithUserId);
-        console.log(`ActivityStore: Stored ${activitiesWithUserId.length} new activities from API.`);
+        console.log(`ActivityStore: Upserted ${activitiesWithUserId.length} new/updated activities from API.`);
       } else {
         console.log('ActivityStore: No activities returned from API.');
       }

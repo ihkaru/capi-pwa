@@ -64,9 +64,10 @@ const dashboardStore = useDashboardStore();
 const onPageAfterIn = async () => {
   const activityId = props.f7route?.params?.activityId;
   console.log(`ActivityDashboardPage: Page is active for activity ID: ${activityId}`);
-  if (activityId) {
+  if (activityId && dashboardStore.activity?.id !== activityId) {
+    // Only load data if the activity in the store is not the one we are navigating to.
     await dashboardStore.loadDashboardData(activityId);
-  } else {
+  } else if (!activityId) {
     console.error('ActivityDashboardPage: Missing activityId from route.');
     f7.toast.show({ text: 'ID Kegiatan tidak valid.', cssClass: 'error-toast' });
   }
@@ -82,7 +83,8 @@ async function handleDeltaSync() {
 async function handleFullSync() {
   const activityId = props.f7route?.params?.activityId;
   if (activityId) {
-    await dashboardStore.syncFull(activityId);
+    const pendingAssignments = dashboardStore.assignments.filter(a => a.status === 'PENDING');
+    await dashboardStore.syncFull(activityId, false, pendingAssignments);
   }
 }
 

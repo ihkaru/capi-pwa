@@ -4,9 +4,9 @@
 
     <f7-block v-if="isRejectedByPmlOrAdmin && formStore.state.assignmentResponse?.notes" class="rejected-notes-block">
       <f7-block-header>Catatan Penolakan</f7-block-header>
-      <f7-block-content>
+      <div class="block-content">
         <p>{{ formStore.state.assignmentResponse.notes }}</p>
-      </f7-block-content>
+      </div>
     </f7-block>
 
     <!-- Main Action FAB -->
@@ -28,8 +28,8 @@
           @click="() => handlePmlAction('reject')">
           <f7-icon f7="xmark"></f7-icon>
         </f7-fab-button>
-        <f7-fab-button v-if="isPmlMode && allowedActions.includes('REVERT_APPROVAL')" label="Batalkan Persetujuan" color="orange"
-          @click="handleRevertApproval">
+        <f7-fab-button v-if="isPmlMode && allowedActions.includes('REVERT_APPROVAL')" label="Batalkan Persetujuan"
+          color="orange" @click="handleRevertApproval">
           <f7-icon f7="arrow_uturn_left"></f7-icon>
         </f7-fab-button>
       </f7-fab-buttons>
@@ -132,8 +132,8 @@
                 :placeholder="question.placeholder || 'Masukkan jawaban...'"
                 :value="formStore.responses[question.id] || ''"
                 @input="formStore.updateResponse(question.id, $event.target.value)"
-                @blur="formStore.touchField(question.id)"
-                :class="{ 'input-error': validationErrors.has(question.id) }" :disabled="isQuestionDisabled(question)" />
+                @blur="formStore.touchField(question.id)" :class="{ 'input-error': validationErrors.has(question.id) }"
+                :disabled="isQuestionDisabled(question)" />
 
               <!-- Error Message (will be reactive) -->
               <div v-if="validationErrors.has(question.id)" class="input-error-message">
@@ -152,8 +152,8 @@
               <f7-list-input outline type="select" :placeholder="question.placeholder || 'Pilih salah satu...'"
                 :value="formStore.responses[question.id] || ''"
                 @change="formStore.updateResponse(question.id, $event.target.value)"
-                @blur="formStore.touchField(question.id)"
-                :class="{ 'input-error': validationErrors.has(question.id) }" :disabled="isQuestionDisabled(question)">
+                @blur="formStore.touchField(question.id)" :class="{ 'input-error': validationErrors.has(question.id) }"
+                :disabled="isQuestionDisabled(question)">
                 <option value="" disabled>-- Pilih salah satu --</option>
                 <option v-for="option in question.options" :key="option.value" :value="option.value">
                   {{ option.label }}
@@ -188,7 +188,8 @@
                   </div>
                 </div>
 
-                <f7-button large fill @click="() => openCamera(question.id)" class="photo-button" :disabled="isQuestionDisabled(question)">
+                <f7-button large fill @click="() => openCamera(question.id)" class="photo-button"
+                  :disabled="isQuestionDisabled(question)">
                   <f7-icon f7="camera_fill" class="margin-right-half"></f7-icon>
                   {{ formStore.responses[question.id] ? 'Ambil Ulang Foto' : 'Ambil Foto' }}
                 </f7-button>
@@ -213,7 +214,8 @@
                 <GeotagPreview :location="formStore.responses[question.id] || null"
                   @update:location="newLocation => formStore.updateResponse(question.id, newLocation)" />
 
-                <f7-button large fill @click="handleGeotagCapture(question.id)" class="geotag-button" :disabled="isQuestionDisabled(question)">
+                <f7-button large fill @click="handleGeotagCapture(question.id)" class="geotag-button"
+                  :disabled="isQuestionDisabled(question)">
                   <f7-icon f7="placemark_fill" class="margin-right-half"></f7-icon>
                   {{ formStore.responses[question.id] ? 'Ambil Ulang Lokasi' : 'Ambil Lokasi' }}
                 </f7-button>
@@ -230,7 +232,7 @@
             <!-- Roster Input -->
             <template v-else-if="question.type === 'roster'">
               <RosterList :rosterQuestion="question" :rosterData="formStore.responses[question.id] || []"
-                :assignmentId="props.assignmentId" :disabled="isQuestionDisabled(question)" />
+                :assignmentId="currentAssignmentId" :disabled="isQuestionDisabled(question)" />
             </template>
 
           </div>
@@ -259,7 +261,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, watch, nextTick } from 'vue';
-import { f7, f7Icon } from 'framework7-vue';
+import { f7, f7Icon, f7BlockContent } from 'framework7-vue';
 import { useFormStore } from '@/js/stores/formStore';
 import { useAuthStore } from '@/js/stores/authStore';
 import { useUiStore } from '@/js/stores/uiStore';
@@ -270,7 +272,7 @@ import { executeLogic } from '@/js/services/logicEngine';
 import ApiClient from '@/js/services/ApiClient';
 import GeotagPreview from '@/components/GeotagPreview.vue';
 
-const props = defineProps({ assignmentId: String });
+const props = defineProps({ f7route: Object });
 
 const formStore = useFormStore();
 const authStore = useAuthStore();
@@ -320,7 +322,7 @@ const isFormLocked = computed(() => {
   const role = authStore.activeRole;
 
   if (role === 'PPL') {
-    const editableStatuses = ['Opened', 'Assigned', 'Rejected by PML', 'Rejected by Admin'];
+    const editableStatuses = ['Opened', 'Assigned', 'PENDING', 'Rejected by PML', 'Rejected by Admin'];
     return !editableStatuses.includes(status);
   }
   // For PML or any other role, the form is not locked by this global flag.
@@ -384,9 +386,12 @@ function openSummarySheet(category: string) {
   });
 }
 
+const currentAssignmentId = computed(() => formStore.state.assignment?.id);
+
 async function fetchAllowedActions() {
   try {
-    const actions = await ApiClient.getAllowedActions(props.assignmentId);
+    if (!currentAssignmentId.value) return; // Don't fetch if no assignment ID
+    const actions = await ApiClient.getAllowedActions(currentAssignmentId.value);
     allowedActions.value = actions;
   } catch (error) {
     console.error("Failed to fetch allowed actions:", error);
@@ -465,7 +470,7 @@ async function scrollToQuestion(questionId: string) {
     const rosterId = questionIdParts[0];
     const itemIndex = questionIdParts[1];
     const nestedQuestionId = questionIdParts.slice(2).join('.');
-    f7.views.main.router.navigate(`/interview/${props.assignmentId}/roster/${rosterId}/${itemIndex}?scrollTo=${nestedQuestionId}`);
+    f7.views.main.router.navigate(`/interview/${currentAssignmentId.value}/roster/${rosterId}/${itemIndex}?scrollTo=${nestedQuestionId}`);
   } else {
     const el = document.querySelector(`[data-question-id="${questionId}"]`);
     if (el) {
@@ -479,12 +484,42 @@ function onPageAfterIn() {
 }
 
 onMounted(() => {
-  if (props.assignmentId) {
-    formStore.loadAssignmentFromLocalDB(props.assignmentId);
+  const routePath = props.f7route?.path;
+  const queryAssignmentId = props.f7route?.query?.assignmentId; // 'new' for new assignments
+  const paramAssignmentId = props.f7route?.params?.assignmentId; // Actual ID for existing assignments
+  const activityId = props.f7route?.query?.activityId; // Get activityId from query
+
+  console.log('InterviewFormPage: onMounted triggered.');
+  console.log('InterviewFormPage: routePath:', routePath);
+  console.log('InterviewFormPage: queryAssignmentId (from query): ', queryAssignmentId);
+  console.log('InterviewFormPage: paramAssignmentId (from params): ', paramAssignmentId);
+  console.log('InterviewFormPage: activityId from query:', activityId);
+
+  if (routePath === '/assignment/new') {
+    // Create mode
+    console.log('InterviewFormPage: Entering create mode.');
+    const encodedPrefilledGeoData = props.f7route?.query?.prefilledGeoData;
+    let prefilledGeoData = {};
+    if (encodedPrefilledGeoData) {
+      try {
+        prefilledGeoData = JSON.parse(decodeURIComponent(encodedPrefilledGeoData));
+        console.log('InterviewFormPage: Parsed prefilledGeoData:', prefilledGeoData);
+      } catch (e) {
+        console.error('InterviewFormPage: Failed to parse prefilledGeoData from URL:', e);
+      }
+    }
+    formStore.initializeNewAssignment(activityId, prefilledGeoData); // Pass activityId
+    console.log('InterviewFormPage: formStore.initializeNewAssignment called.');
+  } else if (paramAssignmentId) {
+    // Edit mode for existing assignment
+    console.log('InterviewFormPage: Entering edit mode for existing assignment.');
+    formStore.loadAssignmentFromLocalDB(paramAssignmentId);
+    console.log('InterviewFormPage: formStore.loadAssignmentFromLocalDB called.');
   }
   if (authStore.activeRole === 'PML') {
     isPmlMode.value = true;
     fetchAllowedActions();
+    console.log('InterviewFormPage: PML mode detected, fetching allowed actions.');
   }
 });
 
@@ -562,7 +597,10 @@ function submitForm() {
   f7.dialog.confirm('Apakah Anda yakin ingin menandai formulir ini sebagai selesai dan mengirimnya?', 'Konfirmasi Submit', async () => {
     try {
       f7.dialog.preloader('Submitting...');
-      await formStore.submitAssignment();
+
+      // ✅ Use the unified 'submit' action from the refactored store
+      await formStore.submit();
+
       f7.dialog.close();
       uiStore.setShouldTriggerAssignmentListSync(true);
       f7.toast.show({ text: 'Formulir berhasil di-submit dan masuk antrean sinkronisasi!', closeTimeout: 3000 });
@@ -587,10 +625,13 @@ function submitForm() {
 .rejected-notes-block {
   margin: 16px;
   padding: 16px;
-  background-color: #ffebee; /* Light red background */
-  border-left: 5px solid #ef5350; /* Red border */
+  background-color: #ffebee;
+  /* Light red background */
+  border-left: 5px solid #ef5350;
+  /* Red border */
   border-radius: 4px;
-  color: #b71c1c; /* Dark red text */
+  color: #b71c1c;
+  /* Dark red text */
   font-weight: 500;
 }
 

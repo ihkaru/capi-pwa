@@ -2,6 +2,7 @@ import { activityDB, SyncQueueItem } from '../offline/ActivityDB';
 import apiClient from '../ApiClient';
 import { f7 } from 'framework7-vue';
 import { useAuthStore } from '@/js/stores/authStore';
+import { useDashboardStore } from '@/js/stores/dashboardStore';
 
 const SYNC_INTERVAL = 1000 * 60; // 1 minute
 const MAX_RETRIES = 3;
@@ -128,6 +129,12 @@ class SyncEngine {
               item.payload.assignment,
               item.payload.assignmentResponse,
             );
+            // After successful creation on server, update local status to Submitted by PPL
+            const createdAssignment = { ...item.payload.assignment, status: 'Submitted by PPL' };
+            const createdAssignmentResponse = { ...item.payload.assignmentResponse, status: 'Submitted by PPL' };
+            await activityDB.assignments.put(createdAssignment);
+            await activityDB.assignmentResponses.put(createdAssignmentResponse);
+            console.log(`SyncEngine: Updated local assignment ${createdAssignment.id} to 'Submitted by PPL' status.`);
             break;
 
           case 'uploadPhoto':
@@ -155,6 +162,12 @@ class SyncEngine {
 
         console.log(`SyncEngine: Successfully synced ${item.type} (ID: ${item.id})`, response);
         await activityDB.syncQueue.delete(item.id!); // Remove from queue on success
+
+        // After successful createAssignment, trigger a delta sync for the activity
+        if (item.type === 'createAssignment') {
+          const dashboardStore = useDashboardStore();
+          await dashboardStore.syncDelta(item.payload.activityId);
+        }
       } catch (error: any) {
         console.error(`SyncEngine: Failed to sync ${item.type} (ID: ${item.id}):`, error);
 
@@ -186,4 +199,5 @@ class SyncEngine {
   }
 }
 
-export const syncEngine = new SyncEngine();
+const syncEngine = new SyncEngine();
+export default syncEngine;

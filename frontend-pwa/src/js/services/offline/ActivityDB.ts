@@ -94,6 +94,17 @@ export class ActivityDB extends Dexie {
   constructor() {
     super('CerdasActivityDB'); // Nama database
 
+    // VERSI 5: Menambahkan index pada status assignment
+    this.version(5).stores({
+      activities: '[id+user_id], user_id',
+      assignments: 'id, [activity_id+user_id+status], [activity_id+user_id], user_id, status',
+      formSchemas: '[activity_id+user_id], user_id',
+      masterData: '[activity_id+type+version], user_id',
+      syncQueue: '++id, type, status, user_id',
+      responseHistories: '++id, assignment_response_id, user_id',
+      masterSls: 'sls_id, id'
+    });
+
     // VERSI 4: Menambahkan compound indexes untuk optimasi query
     this.version(4).stores({
       activities: '[id+user_id], user_id', // Compound index

@@ -9,6 +9,7 @@ use App\Models\KegiatanStatistik; // Import KegiatanStatistik
 use App\Models\Assignment; // Import Assignment
 use App\Models\MasterData; // Import MasterData
 use App\Models\AssignmentResponse;
+use App\Models\AssignmentAttachment; // Import AssignmentAttachment
 use Illuminate\Support\Facades\Log; // Import Log facade
 use Illuminate\Support\Facades\DB; // Import DB facade
 use Illuminate\Support\Facades\Validator;
@@ -55,11 +56,17 @@ class ActivityController extends Controller
         // 2. Fetch Assignments for the user within this activity
         // If user is PPL, fetch their assignments. If PML, fetch assignments of PPLs they supervise.
         $assignments = collect([]);
+        $pmlIdForPPL = null; // Initialize pmlIdForPPL
+
         if ($user->hasRole('PPL')) {
             $assignments = Assignment::with('response') // Eager load relasi response
                                     ->where('kegiatan_statistik_id', $kegiatanStatistik->id)
                                     ->where('ppl_id', $user->id)
                                     ->get();
+            // Get the PML ID from one of the PPL's assignments
+            if ($assignments->isNotEmpty()) {
+                $pmlIdForPPL = $assignments->first()->pml_id;
+            }
         } elseif ($user->hasRole('PML')) {
             $assignments = Assignment::with('response') // Eager load relasi response
                                     ->where('kegiatan_statistik_id', $kegiatanStatistik->id)
@@ -120,7 +127,7 @@ class ActivityController extends Controller
         // Return the data
         return response()->json([
             'data' => [
-                'activity' => new KegiatanStatistikResource($kegiatanStatistik), 
+                'activity' => new KegiatanStatistikResource($kegiatanStatistik, ['pml_id_for_ppl' => $pmlIdForPPL]), // Pass pmlIdForPPL
                 'assignments' => $assignments, // assignments sekarang sudah punya status
                 'assignmentResponses' => $assignmentResponses,
                 'master_sls' => $masterSls, 
@@ -232,12 +239,14 @@ class ActivityController extends Controller
 
     public function createAssignment(Request $request, $activityId)
     {
+        Log::info('createAssignment: Method started.');
         $user = $request->user();
 
         // 1. Validate incoming data
         $validator = Validator::make($request->all(), [
             'assignment.id' => 'required|string|uuid',
             'assignment.kegiatan_statistik_id' => 'required|string|uuid|exists:kegiatan_statistiks,id',
+            'assignment.satker_id' => 'required|string|uuid|exists:satkers,id',
             'assignment.ppl_id' => 'required|string|uuid|exists:users,id',
             'assignment.pml_id' => 'nullable|string|uuid|exists:users,id',
             'assignment.assignment_label' => 'required|string|max:255',
@@ -253,7 +262,7 @@ class ActivityController extends Controller
             'assignment.level_5_label' => 'nullable|string',
             'assignment.level_6_code' => 'nullable|string',
             'assignment.level_6_label' => 'nullable|string',
-            'assignment.level_4_code_full' => 'nullable|string',
+            'assignment.level_4_code_full' => 'required|string',
             'assignment.level_6_code_full' => 'nullable|string',
             'assignment.prefilled_data' => 'nullable|array',
             'assignment.status' => 'required|string|in:Assigned',
@@ -265,68 +274,74 @@ class ActivityController extends Controller
             'assignment_response.form_version_used' => 'required|integer',
             'assignment_response.responses' => 'nullable|array',
 
-            'photo' => 'nullable|string', // Base64 encoded image
+            'photo_id' => 'nullable|string|uuid|exists:assignment_attachments,id', // Photo ID from pre-uploaded photo
         ]);
 
         if ($validator->fails()) {
             Log::error('Create Assignment Validation Failed:', $validator->errors()->toArray());
             return response()->json($validator->errors(), 422);
         }
+        Log::info('createAssignment: Validation passed.');
 
         $validated = $validator->validated();
 
+        Log::info('createAssignment: Starting DB transaction.');
         DB::beginTransaction();
         try {
+            Log::info('createAssignment: Transaction started.');
             $kegiatanStatistik = KegiatanStatistik::where('id', $activityId)->firstOrFail();
 
             // 2. Enforce allow_new_assignments_from_pwa check
             if (!$kegiatanStatistik->allow_new_assignments_from_pwa) {
                 DB::rollBack();
+                Log::warning('createAssignment: Activity does not allow new assignments from PWA.');
                 return response()->json(['message' => 'This activity does not allow new assignments to be created from PWA.'], 403);
             }
 
             // Authorization: Ensure the user is the assigned PPL for this new assignment
             if ($validated['assignment']['ppl_id'] !== $user->id) {
                 DB::rollBack();
+                Log::warning('createAssignment: Unauthorized to create assignment for another PPL.');
                 return response()->json(['message' => 'Unauthorized to create assignment for another PPL.'], 403);
             }
 
-            // Handle photo upload if present
-            $photoPath = null;
-            if (!empty($validated['photo'])) {
-                $base64Image = $validated['photo'];
-                // Decode base64 string
-                $imageData = base64_decode(preg_replace('#^data:image/\w+;base64,#i', '', $base64Image));
-                $imageName = 'assignments/' . $validated['assignment']['id'] . '-' . uniqid() . '.jpg';
-                
-                // Store the image
-                
-                Illuminate\Support\Facades\Storage::disk('public')->put($imageName, $imageData);
-                $photoPath = $imageName;
-            }
-
             // Create Assignment record
+            Log::info('createAssignment: Creating Assignment record.');
             $assignment = new Assignment($validated['assignment']);
             $assignment->id = $validated['assignment']['id']; // Ensure UUID is used
             $assignment->prefilled_data = $validated['assignment']['prefilled_data'] ?? [];
+
+            
+
+            Log::info('createAssignment: Saving Assignment record.');
             $assignment->save();
+            Log::info('createAssignment: Assignment record saved.');
 
             // Create AssignmentResponse record
+            Log::info('createAssignment: Creating AssignmentResponse record.');
             $assignmentResponse = new AssignmentResponse($validated['assignment_response']);
             $assignmentResponse->assignment_id = $validated['assignment_response']['assignment_id']; // Ensure UUID is used
             $assignmentResponse->responses = $validated['assignment_response']['responses'] ?? [];
+            $assignmentResponse->status = 'Submitted by PPL'; // Set status to Submitted by PPL on successful creation
+            $assignmentResponse->submitted_by_ppl_at = now();
+            Log::info('createAssignment: Saving AssignmentResponse record.');
             $assignmentResponse->save();
+            Log::info('createAssignment: AssignmentResponse record saved.');
 
-            // If photo was uploaded, create an AssignmentAttachment record
-            if ($photoPath) {
-                AssignmentAttachment::create([
-                    'assignment_id' => $assignment->id,
-                    'file_path' => $photoPath,
-                    'file_type' => 'photo',
-                ]);
+            // If photo_id is present, link the AssignmentAttachment
+            if (!empty($validated['photo_id'])) {
+                Log::info('createAssignment: Linking AssignmentAttachment.');
+                $attachment = \App\Models\AssignmentAttachment::find($validated['photo_id']);
+                if ($attachment) {
+                    $attachment->assignment_id = $assignment->id;
+                    $attachment->save();
+                    Log::info('createAssignment: AssignmentAttachment linked and saved.');
+                }
             }
 
+            Log::info('createAssignment: Committing DB transaction.');
             DB::commit();
+            Log::info('createAssignment: Transaction committed.');
 
             return response()->json(['message' => 'Assignment created successfully', 'assignment_id' => $assignment->id], 201);
 

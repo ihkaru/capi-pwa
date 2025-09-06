@@ -3,39 +3,27 @@
     <f7-navbar :title="groupName" back-link="Kembali"></f7-navbar>
 
     <f7-block-title>Daftar Penugasan</f7-block-title>
-    <f7-card>
-      <div class="data-table">
-        <table>
-          <thead>
-            <tr>
-              <th class="label-cell">Label Penugasan</th>
-              <th class="label-cell">Status</th>
-              <th class="actions-cell">Aksi</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="assignment in assignmentsInGroup" :key="assignment.id"
-              :style="{ backgroundColor: getBackgroundColorForStatus(assignment.status) }">
-              <td class="label-cell">{{ assignment.assignment_label }}</td>
-              <td class="label-cell">{{ assignment.status || 'Assigned' }}</td>
-              <td class="actions-cell">
-                <f7-button small fill @click="handleOpenAssignment(assignment.id)">Buka</f7-button>
-              </td>
-            </tr>
-            <tr v-if="!assignmentsInGroup || assignmentsInGroup.length === 0">
-              <td colspan="3" class="text-align-center">Tidak ada penugasan dalam grup ini.</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </f7-card>
+    <f7-list strong-ios outline-ios dividers-ios>
+      <f7-list-item v-for="assignment in assignmentsInGroup" :key="assignment.id" :title="assignment.assignment_label"
+        :badge="assignment.status || 'Assigned'" :badge-color="getBadgeColorForStatus(assignment.status)" swipeout
+        @click="handleOpenAssignment(assignment.id)">
+        <f7-swipeout-actions right>
+          <f7-swipeout-button v-if="authStore.activeRole === 'PPL' && assignment.status === 'PENDING'" color="red"
+            @click.stop="handleDeleteAssignment(assignment.id)">
+            Hapus
+          </f7-swipeout-button>
+        </f7-swipeout-actions>
+      </f7-list-item>
+      <f7-list-item v-if="!assignmentsInGroup || assignmentsInGroup.length === 0">
+        <div class="text-align-center" style="width: 100%;">Tidak ada penugasan dalam grup ini.</div>
+      </f7-list-item>
+    </f7-list>
 
-    <f7-block v-if="dashboardStore.activity?.allow_new_assignments_from_pwa && authStore.activeRole === 'PPL'">
-      <f7-button large fill @click="handleAddNewAssignment">
-        <f7-icon f7="plus"></f7-icon>
-        Tambah Assignment Baru
-      </f7-button>
-    </f7-block>
+    <f7-fab position="right-bottom" slot="fixed"
+      :if="dashboardStore.activity?.allow_new_assignments_from_pwa && authStore.activeRole === 'PPL'"
+      @click="handleAddNewAssignment">
+      <f7-icon f7="plus"></f7-icon>
+    </f7-fab>
 
   </f7-page>
 </template>
@@ -47,8 +35,7 @@ import { useDashboardStore } from '../js/stores/dashboardStore';
 import { useUiStore } from '../js/stores/uiStore';
 import { useAuthStore } from '../js/stores/authStore';
 import { Assignment } from '../js/services/offline/ActivityDB';
-import { getBackgroundColorForStatus } from '../js/utils/statusColors';
-import AddNewAssignmentModal from '../components/AddNewAssignmentModal.vue';
+import { getBadgeColorForStatus } from '../js/utils/statusColors';
 
 const props = defineProps({
   f7route: Object,
@@ -71,88 +58,90 @@ const assignmentsInGroup = computed(() => {
 });
 
 function handleOpenAssignment(assignmentId: string) {
+  // Prevent navigation if a swipeout is open
+  if (f7.swipeout.el) return;
   console.log('AssignmentListPage: Navigating to assignment with ID:', assignmentId);
   f7.views.main.router.navigate(`/assignment/${assignmentId}/`);
 }
 
+async function handleDeleteAssignment(assignmentId: string) {
+  await dashboardStore.deletePendingAssignment(assignmentId);
+  // Close swipeout after action
+  f7.swipeout.close(f7.swipeout.el);
+}
+
 function onPageAfterIn() {
+  const currentActivityId = dashboardStore.activity?.id;
+  if (!currentActivityId) {
+    console.warn('AssignmentListPage: No current activity ID found on page after in.');
+    return;
+  }
+
   if (uiStore.shouldTriggerAssignmentListSync) {
     if (navigator.onLine) {
-      const currentActivityId = dashboardStore.activity?.id;
-      if (currentActivityId) {
-        console.log('AssignmentListPage: Triggering delta sync after status change for activity:', currentActivityId);
-        dashboardStore.syncDelta(currentActivityId);
-      } else {
-        console.warn('AssignmentListPage: No current activity ID found for delta sync.');
-      }
+      console.log('AssignmentListPage: Triggering delta sync after status change for activity:', currentActivityId);
+      dashboardStore.syncDelta(currentActivityId);
     } else {
       console.log('AssignmentListPage: Offline, skipping delta sync after status change.');
     }
-    // Always reset the flag after checking it
     uiStore.setShouldTriggerAssignmentListSync(false);
-  } else {
-    console.log('AssignmentListPage: Not triggered by status change, skipping delta sync.');
   }
 }
 
 function handleAddNewAssignment() {
   const currentActivity = dashboardStore.activity;
-  const currentGroup = dashboardStore.groupedAssignments[groupName.value];
+  const rawLevelCodes = props.f7route?.query?.levelCodes;
+  let prefilledGeoData: Partial<Assignment> = {};
 
-  if (!currentActivity || !currentGroup) {
-    f7.dialog.alert('Tidak dapat menambahkan penugasan baru: informasi kegiatan atau grup tidak lengkap.');
+  if (rawLevelCodes) {
+    try {
+      prefilledGeoData = JSON.parse(decodeURIComponent(rawLevelCodes as string));
+    } catch (e) {
+      console.error('Error parsing levelCodes from URL:', e);
+      f7.dialog.alert('Terjadi kesalahan saat memuat data wilayah. Silakan coba lagi.');
+      return;
+    }
+  } else {
+    const currentGroup = dashboardStore.groupedAssignments[groupName.value];
+    if (currentGroup && currentGroup.assignments.length > 0) {
+      const firstAssignmentInGroup = currentGroup.assignments[0];
+      prefilledGeoData = {
+        level_1_code: firstAssignmentInGroup?.level_1_code,
+        level_1_label: firstAssignmentInGroup?.level_1_label,
+        level_2_code: firstAssignmentInGroup?.level_2_code,
+        level_2_label: firstAssignmentInGroup?.level_2_label,
+        level_3_code: firstAssignmentInGroup?.level_3_code,
+        level_3_label: firstAssignmentInGroup?.level_3_label,
+        level_4_code: firstAssignmentInGroup?.level_4_code,
+        level_4_label: firstAssignmentInGroup?.level_4_label,
+        level_5_code: firstAssignmentInGroup?.level_5_code,
+        level_5_label: firstAssignmentInGroup?.level_5_label,
+        level_6_code: firstAssignmentInGroup?.level_6_code,
+        level_6_label: firstAssignmentInGroup?.level_6_label,
+        level_4_code_full: firstAssignmentInGroup?.level_4_code_full,
+        level_6_code_full: firstAssignmentInGroup?.level_6_code_full,
+      };
+    } else {
+      f7.dialog.alert('Tidak dapat menambahkan penugasan baru: informasi kegiatan atau grup tidak lengkap.');
+      return;
+    }
+  }
+
+  if (!currentActivity) {
+    f7.dialog.alert('Tidak dapat menambahkan penugasan baru: informasi kegiatan tidak lengkap.');
     return;
   }
 
-  // Extract geographical codes from the first assignment in the group
-  // Assuming all assignments in a group share the same geographical codes up to their grouping level
-  const firstAssignmentInGroup = currentGroup.assignments[0];
-  const prefilledGeoData = {
-    level_1_code: firstAssignmentInGroup?.level_1_code,
-    level_1_label: firstAssignmentInGroup?.level_1_label,
-    level_2_code: firstAssignmentInGroup?.level_2_code,
-    level_2_label: firstAssignmentInGroup?.level_2_label,
-    level_3_code: firstAssignmentInGroup?.level_3_code,
-    level_3_label: firstAssignmentInGroup?.level_3_label,
-    level_4_code: firstAssignmentInGroup?.level_4_code,
-    level_4_label: firstAssignmentInGroup?.level_4_label,
-    level_5_code: firstAssignmentInGroup?.level_5_code,
-    level_5_label: firstAssignmentInGroup?.level_5_label,
-    level_6_code: firstAssignmentInGroup?.level_6_code,
-    level_6_label: firstAssignmentInGroup?.level_6_label,
-    level_4_code_full: firstAssignmentInGroup?.level_4_code_full,
-    level_6_code_full: firstAssignmentInGroup?.level_6_code_full,
-  };
-
   console.log('Prefilled Geographical Data for New Assignment:', prefilledGeoData);
 
-  f7.popup.open(AddNewAssignmentModal, {
-    props: {
-      prefilledGeoData: prefilledGeoData,
-    },
-  });
+  const encodedPrefilledGeoData = encodeURIComponent(JSON.stringify(prefilledGeoData));
+  const activityId = currentActivity.id;
+  const navigateUrl = `/assignment/new?activityId=${activityId}&prefilledGeoData=${encodedPrefilledGeoData}`;
+  console.log('AssignmentListPage: Navigating to:', navigateUrl);
+  f7.views.main.router.navigate(navigateUrl);
 }
 </script>
 
 <style scoped>
-.data-table table {
-  width: 100%;
-  border-collapse: collapse;
-}
-
-.data-table th,
-.data-table td {
-  padding: 8px 12px;
-  text-align: left;
-  border-bottom: 1px solid #e0e0e0;
-}
-
-.data-table th {
-  font-weight: bold;
-  background-color: #f7f7f7;
-}
-
-.data-table .actions-cell {
-  text-align: right;
-}
+/* Add any specific styles if needed */
 </style>

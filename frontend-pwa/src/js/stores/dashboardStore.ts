@@ -4,9 +4,14 @@ import { f7 } from 'framework7-vue';
 import { activityDB, Activity, Assignment, FormSchema, MasterSls } from '../services/offline/ActivityDB';
 import { useAuthStore } from './authStore';
 import apiClient from '../services/ApiClient';
+import { useAppMetadataStore } from './appMetadata';
+
+// Assuming syncEngine is correctly imported. Adjust path if necessary.
+import syncEngine from '../services/sync/SyncEngine';
 
 export const useDashboardStore = defineStore('dashboard', () => {
   const authStore = useAuthStore();
+  const appMetadataStore = useAppMetadataStore();
 
   // --- STATE ---
   const isLoading = ref(false);
@@ -19,6 +24,12 @@ export const useDashboardStore = defineStore('dashboard', () => {
   const currentUserId = computed(() => authStore.user?.id);
 
   // --- GETTERS (COMPUTED) ---
+
+  // Using a Map for efficient O(1) lookups is a good optimization.
+  const masterSlsMap = computed(() => {
+    return new Map(masterSls.value.map(s => [s.sls_id, s.nama]));
+  });
+
   const statusSummary = computed(() => {
     if (!assignments.value) return {};
     return assignments.value.reduce((acc, assignment) => {
@@ -29,56 +40,71 @@ export const useDashboardStore = defineStore('dashboard', () => {
   });
 
   const groupedAssignments = computed(() => {
-    const groups = assignments.value.reduce((acc, assignment) => {
+    return assignments.value.reduce((acc, assignment) => {
+      const groupLevelCodes: Partial<Assignment> = {
+        level_1_code: assignment.level_1_code,
+        level_1_label: assignment.level_1_label,
+        level_2_code: assignment.level_2_code,
+        level_2_label: assignment.level_2_label,
+        level_3_code: assignment.level_3_code,
+        level_3_label: assignment.level_3_label,
+        level_4_code: assignment.level_4_code,
+        level_4_label: assignment.level_4_label,
+        level_5_code: assignment.level_5_code,
+        level_5_label: assignment.level_5_label,
+        level_6_code: assignment.level_6_code,
+        level_6_label: assignment.level_6_label,
+        level_4_code_full: assignment.level_4_code_full,
+        level_6_code_full: assignment.level_6_code_full,
+      };
+
+      const getSlsLabel = (codeFull: string | null | undefined) => {
+        return codeFull ? masterSlsMap.value.get(codeFull) || null : null;
+      };
+
       let groupName = '';
-      if ((assignment.level_5_code === null || assignment.level_5_code === '') && 
-          (assignment.level_6_code === null || assignment.level_6_code === '')) {
-        groupName = assignment.level_4_label || `Wilayah: ${assignment.level_4_code_full}`;
+      const isLevel4 = !assignment.level_5_code && !assignment.level_6_code;
+
+      if (isLevel4) {
+        const label = assignment.level_4_label || getSlsLabel(assignment.level_4_code_full);
+        groupName = label || `Wilayah: ${assignment.level_4_code_full}`;
+        groupLevelCodes.level_4_label = label;
       } else {
-        groupName = assignment.level_6_label || `Wilayah: ${assignment.level_6_code_full}`;
+        const label = assignment.level_6_label || getSlsLabel(assignment.level_6_code_full);
+        groupName = label || `Wilayah: ${assignment.level_6_code_full}`;
+        groupLevelCodes.level_6_label = label;
       }
 
       if (!acc[groupName]) {
-        acc[groupName] = [];
+        acc[groupName] = {
+          assignments: [],
+          summary: {},
+          total: 0,
+          levelCodes: groupLevelCodes,
+        };
       }
-      acc[groupName].push(assignment);
+      
+      acc[groupName].assignments.push(assignment);
+      acc[groupName].total++;
+      const status = assignment.status || 'Assigned';
+      acc[groupName].summary[status] = (acc[groupName].summary[status] || 0) + 1;
+      
       return acc;
-    }, {} as Record<string, any[]>);
-
-    const result = {};
-    for (const groupName in groups) {
-      const groupAssignments = groups[groupName];
-      const summary = groupAssignments.reduce((acc, assignment) => {
-        const status = assignment.status || 'Assigned';
-        acc[status] = (acc[status] || 0) + 1;
-        return acc;
-      }, {} as Record<string, number>);
-
-      result[groupName] = {
-        summary: summary,
-        assignments: groupAssignments,
-        total: groupAssignments.length,
-      };
-    }
-
-    return result;
+    }, {} as Record<string, { assignments: Assignment[], summary: Record<string, number>, total: number, levelCodes: Partial<Assignment> }>);
   });
 
   // --- ACTIONS ---
 
   async function loadDashboardData(activityId: string) {
     if (!currentUserId.value) return;
-    console.log(`LOG: [dashboardStore] loadDashboardData: Membaca data dari DexieDB untuk activityId: ${activityId}`);
+    console.log(`LOG: [dashboardStore] loadDashboardData: Loading data from DexieDB for activityId: ${activityId}`);
     try {
       const user = currentUserId.value;
       activity.value = await activityDB.activities.where({ id: activityId, user_id: user }).first() || null;
       
-      // Set the active role in the auth store based on the activity context
       if (activity.value?.user_role) {
         authStore.setActiveRole(activity.value.user_role);
-        console.log(`[dashboardStore] Active role set to: ${activity.value.user_role}`);
       } else {
-        // Clear the role if the activity doesn't define one (should not happen in normal flow)
         authStore.setActiveRole(null);
         console.warn(`[dashboardStore] No user_role found for activity ${activityId}. Active role cleared.`);
       }
@@ -86,35 +112,51 @@ export const useDashboardStore = defineStore('dashboard', () => {
       formSchema.value = await activityDB.formSchemas.where({ activity_id: activityId, user_id: user }).first() || null;
       const allAssignments = await activityDB.assignments.where({ activity_id: activityId, user_id: user }).toArray();
       assignments.value = allAssignments;
-      const slsCodes = allAssignments.map(a => a.level_6_code_full).filter(Boolean);
-      masterSls.value = await activityDB.masterSls.where('sls_id').anyOf(slsCodes).toArray();
+      
+      // Use a Set to get unique SLS codes for a more efficient DB query
+      const slsCodes = [...new Set(allAssignments.flatMap(a => [a.level_4_code_full, a.level_6_code_full]).filter(Boolean) as string[])];
+      if (slsCodes.length > 0) {
+        masterSls.value = await activityDB.masterSls.where('sls_id').anyOf(slsCodes).toArray();
+      } else {
+        masterSls.value = [];
+      }
+
     } catch (error) {
-      console.error('LOG-ERROR: [dashboardStore] loadDashboardData: Gagal memuat data dari DexieDB', error);
-      activity.value = null;
-      assignments.value = [];
-      formSchema.value = null;
-      masterSls.value = [];
+      console.error('LOG-ERROR: [dashboardStore] loadDashboardData: Failed to load data from DexieDB', error);
+      reset(); // Reset state on critical error
     }
   }
 
   async function syncDelta(activityId: string) {
     if (!currentUserId.value) {
-      f7.toast.show({ text: 'Sync gagal: Pengguna tidak ditemukan.', cssClass: 'error-toast' });
+      f7.toast.show({ text: 'Sync failed: User not found.', cssClass: 'error-toast' });
       return;
     }
-    f7.dialog.preloader('Sinkronisasi Perubahan...');
+    f7.dialog.preloader('Syncing Changes...');
     try {
-      await syncFull(activityId, true); // Panggil syncFull tapi bypass konfirmasi
+      const now = new Date().toISOString();
+      const lastSyncTimestamp = await appMetadataStore.getMetadata(`lastSyncTimestamp_${currentUserId.value}_${activityId}`);
+      const updates = await apiClient.getActivitiesDelta(activityId, lastSyncTimestamp || '1970-01-01T00:00:00Z');
 
-      f7.toast.show({ 
-        text: 'Sinkronisasi perubahan berhasil!', 
-        cssClass: 'success-toast',
-        position: 'bottom',
-        closeTimeout: 3000, 
-      });
+      if (updates.assignments?.length > 0) {
+        const assignmentsToUpsert = updates.assignments.map(assign => ({ ...assign, user_id: currentUserId.value, activity_id: activityId }));
+        await activityDB.assignments.bulkPut(assignmentsToUpsert);
+      }
+
+      if (updates.assignmentResponses?.length > 0) {
+        const responsesToUpsert = updates.assignmentResponses.map(res => ({ ...res, user_id: currentUserId.value }));
+        await activityDB.assignmentResponses.bulkPut(responsesToUpsert);
+      }
+      
+      // After syncing, reload data from the local DB to ensure UI is consistent
+      await loadDashboardData(activityId);
+
+      await appMetadataStore.setMetadata(`lastSyncTimestamp_${currentUserId.value}_${activityId}`, now);
+      f7.toast.show({ text: 'Changes synced successfully!', cssClass: 'success-toast', position: 'bottom', closeTimeout: 3000 });
+
     } catch (error) {
-      console.error('LOG-ERROR: [dashboardStore] syncDelta gagal:', error);
-      f7.dialog.alert('Gagal melakukan sinkronisasi perubahan.');
+      console.error('LOG-ERROR: [dashboardStore] syncDelta failed:', error);
+      f7.dialog.alert('Failed to sync changes.');
     } finally {
       f7.dialog.close();
     }
@@ -122,62 +164,92 @@ export const useDashboardStore = defineStore('dashboard', () => {
 
   async function syncFull(activityId: string, bypassConfirmation = false) {
     if (!currentUserId.value) {
-      f7.toast.show({ text: 'Sync gagal: Pengguna tidak ditemukan.', cssClass: 'error-toast' });
+      f7.toast.show({ text: 'Sync failed: User not found.', cssClass: 'error-toast' });
       return;
     }
 
     const startSync = async () => {
-      f7.dialog.preloader('Sinkronisasi Penuh...');
+      f7.dialog.preloader('Full Sync...');
       try {
         const user = currentUserId.value;
-        console.log(`LOG: [dashboardStore] syncFull: Menghapus data lokal untuk activityId: ${activityId}`);
-        await activityDB.assignments.where({ activity_id: activityId, user_id: user }).delete();
-        
-        console.log(`LOG: [dashboardStore] syncFull: Mengambil semua data dari API...`);
+        console.log(`[syncFull] Starting syncFull for activityId: ${activityId}, userId: ${user}`);
+
+        // 1. Preserve PENDING assignments
+        console.log('[syncFull] Querying for PENDING assignments to preserve...');
+        const pendingAssignments = await activityDB.assignments
+          .where({ activity_id: activityId, user_id: user, status: 'PENDING' })
+          .toArray();
+        let pendingResponses = [];
+        if (pendingAssignments.length > 0) {
+          const pendingIds = pendingAssignments.map(a => a.id);
+          pendingResponses = await activityDB.assignmentResponses
+            .where('assignment_id').anyOf(pendingIds)
+            .toArray();
+          console.log(`[syncFull] Found ${pendingAssignments.length} PENDING assignments to preserve:`, pendingAssignments.map(a => a.id));
+          console.log('[syncFull] Raw PENDING assignments array:', pendingAssignments.map(a => ({ id: a.id, status: a.status, activity_id: a.activity_id, user_id: a.user_id })));
+        } else {
+          console.log(`[syncFull] No PENDING assignments found to preserve.`);
+        }
+
+        // 2. Fetch fresh data from server BEFORE starting the transaction
+        console.log(`[syncFull] Fetching initial data from server for activity ${activityId}...`);
         const initialData = await apiClient.getInitialData(activityId, false);
+        console.log(`[syncFull] Successfully fetched initial data from server. Assignments received: ${initialData.assignments.length}`);
 
-        // --- BEGIN CRITICAL DEBUG LOG ---
-        console.log('[dashboardStore] Full initialData payload received from server:', JSON.stringify(initialData, null, 2));
-        // --- END CRITICAL DEBUG LOG ---
-
-        console.log('dashboardStore: Saving form schema to Dexie with activity_id:', activityId);
-        console.log('dashboardStore: Schema object being saved:', initialData.form_schema);
-
+        // 3. Use a single transaction for the entire operation
         await activityDB.transaction('rw', 
           [activityDB.activities, activityDB.assignments, activityDB.assignmentResponses, activityDB.formSchemas, activityDB.masterData, activityDB.masterSls],
           async () => {
+            // 3a. Clear all existing data for this activity
+            console.log(`[syncFull] Starting transaction: Clearing old data for activity ${activityId}...`);
+            const assignmentCollection = activityDB.assignments.where({ activity_id: activityId, user_id: user });
+            const assignmentIds = await assignmentCollection.primaryKeys();
+            await assignmentCollection.delete();
+            if (assignmentIds.length > 0) {
+                await activityDB.assignmentResponses.where('assignment_id').anyOf(assignmentIds).delete();
+            }
+            await activityDB.formSchemas.where({ activity_id: activityId, user_id: user }).delete();
+            await activityDB.masterData.where({ activity_id: activityId, user_id: user }).delete();
+            
+            // Save fresh server data
+            console.log(`[syncFull] Storing fresh data from server...`);
             await activityDB.activities.put({ ...initialData.activity, user_id: user });
             await activityDB.formSchemas.put({ activity_id: activityId, user_id: user, schema: initialData.form_schema });
             if (initialData.master_data?.length > 0) {
               const masterDataWithUserId = initialData.master_data.map(md => ({ ...md, activity_id: activityId, user_id: user }));
               await activityDB.masterData.bulkPut(masterDataWithUserId);
             }
-            if (initialData.master_sls && Array.isArray(initialData.master_sls)) {
+            if (initialData.master_sls?.length > 0) {
               await activityDB.masterSls.bulkPut(initialData.master_sls);
             }
             const assignmentsToStore = initialData.assignments.map(assign => ({ ...assign, activity_id: assign.kegiatan_statistik_id, user_id: user }));
             await activityDB.assignments.bulkPut(assignmentsToStore);
-
-            if (initialData.assignmentResponses && Array.isArray(initialData.assignmentResponses)) {
-              console.log(`[dashboardStore] Storing ${initialData.assignmentResponses.length} assignment responses from initial data.`);
+            if (initialData.assignmentResponses?.length > 0) {
               await activityDB.assignmentResponses.bulkPut(initialData.assignmentResponses);
-            } else {
-              console.warn('[dashboardStore] No assignmentResponses found in initial data from server.');
             }
-          }
-        );
+            console.log(`[syncFull] Stored ${assignmentsToStore.length} assignments and ${initialData.assignmentResponses?.length || 0} responses from server.`);
 
-        await loadDashboardData(activityId);
-        f7.toast.show({ 
-          text: 'Sinkronisasi penuh berhasil!', 
-          cssClass: 'success-toast', 
-          position: 'bottom',
-          closeTimeout: 3000,
+            // Re-add the preserved PENDING assignments and responses
+            if (pendingAssignments.length > 0) {
+                const plainPendingAssignments = JSON.parse(JSON.stringify(pendingAssignments));
+                const plainPendingResponses = JSON.parse(JSON.stringify(pendingResponses));
+                await activityDB.assignments.bulkPut(plainPendingAssignments);
+                await activityDB.assignmentResponses.bulkPut(plainPendingResponses);
+                console.log(`[syncFull] Re-added ${pendingAssignments.length} PENDING assignments and responses to Dexie.`);
+            } else {
+              console.log(`[syncFull] No PENDING assignments to re-add.`);
+            }
         });
 
+        // Reload store from local DB to reflect the changes
+        console.log(`[syncFull] Transaction complete. Reloading dashboard data from local DB...`);
+        await loadDashboardData(activityId);
+
+        f7.toast.show({ text: 'Full sync successful!', cssClass: 'success-toast', position: 'bottom', closeTimeout: 3000 });
+
       } catch (error) {
-        console.error('LOG-ERROR: [dashboardStore] syncFull gagal:', error);
-        f7.dialog.alert('Gagal melakukan sinkronisasi penuh.');
+        console.error('LOG-ERROR: [dashboardStore] syncFull failed:', error);
+        f7.dialog.alert('Failed to perform full sync.');
       } finally {
         f7.dialog.close();
       }
@@ -187,30 +259,46 @@ export const useDashboardStore = defineStore('dashboard', () => {
       await startSync();
     } else {
       f7.dialog.confirm(
-        'Ini akan menghapus semua data penugasan lokal untuk kegiatan ini dan mengunduh ulang dari server. Lanjutkan?',
-        'Konfirmasi Sinkronisasi Penuh',
-        async () => await startSync()
+        'This will refresh all data from the server, but new assignments not yet submitted will remain on your device. Continue?',
+        'Confirm Full Sync',
+        startSync
       );
     }
   }
 
   async function createNewAssignment(data: any) {
     if (!currentUserId.value || !activity.value) {
-      throw new Error('Cannot create new assignment: User not authenticated or activity not loaded.');
+      throw new Error('Cannot create assignment: User not authenticated or activity not loaded.');
     }
 
     const newAssignmentId = crypto.randomUUID();
     const now = new Date().toISOString();
     const user = currentUserId.value;
+    let uploadedPhotoId: string | null = null;
 
-    // Construct the new Assignment object
+    // Step 1: Handle photo upload if a photo is provided
+    if (data.photo && navigator.onLine) {
+      try {
+        f7.dialog.preloader('Uploading Photo...');
+        const uploadResponse = await apiClient.uploadAssignmentPhoto(activity.value.id, newAssignmentId, data.photo);
+        uploadedPhotoId = uploadResponse.fileId || null;
+      } catch (uploadError) {
+        console.error('Failed to upload photo immediately:', uploadError);
+        f7.toast.show({ text: 'Failed to upload photo. Assignment will be created without it.', position: 'bottom', cssClass: 'error-toast' });
+      } finally {
+        f7.dialog.close();
+      }
+    } else if (data.photo) {
+        f7.toast.show({ text: 'Offline: Photo cannot be uploaded now. Assignment will be created without it.', position: 'bottom', cssClass: 'warning-toast' });
+    }
+
+    // Step 2: Construct the new assignment and response objects
     const newAssignment: Assignment = {
       id: newAssignmentId,
-      satker_id: authStore.user?.satker_id || null, // Assuming satker_id is available on authStore.user
+      satker_id: authStore.user?.satker_id || null,
       kegiatan_statistik_id: activity.value.id,
       ppl_id: user,
-      pml_id: activity.value.pml_id || null, // Assuming PML is assigned at activity level or can be null
-      // Prefilled geographical data
+      pml_id: activity.value.pml_id || null,
       level_1_code: data.level_1_code || null,
       level_1_label: data.level_1_label || null,
       level_2_code: data.level_2_code || null,
@@ -225,20 +313,23 @@ export const useDashboardStore = defineStore('dashboard', () => {
       level_6_label: data.level_6_label || null,
       level_4_code_full: data.level_4_code_full || null,
       level_6_code_full: data.level_6_code_full || null,
-      // Collected initial data
-      assignment_label: data.nama_krt, // Use KRT name as initial label
-      prefilled_data: { nama_krt: data.nama_krt, geotag: data.geotag, photo: data.photo }, // Store initial collected data here
+      assignment_label: data.nama_krt,
+      prefilled_data: { 
+        nama_krt: data.nama_krt, 
+        geotag: data.geotag,
+        // Only include photo_id if upload was successful
+        ...(uploadedPhotoId && { photo_id: uploadedPhotoId })
+      },
       created_at: now,
       updated_at: now,
-      status: 'Assigned', // Initial status
-      user_id: user, // For Dexie indexing
+      status: 'PENDING',
+      user_id: user,
     };
 
-    // Construct the new AssignmentResponse object
     const newAssignmentResponse = {
       assignment_id: newAssignmentId,
       user_id: user,
-      status: 'Assigned',
+      status: 'PENDING',
       version: 1,
       form_version_used: formSchema.value?.form_version || 1,
       responses: {},
@@ -246,64 +337,25 @@ export const useDashboardStore = defineStore('dashboard', () => {
       updated_at: now,
     };
 
+    // Step 3: Save to local DB and update state
+    const plainAssignment = JSON.parse(JSON.stringify(newAssignment));
+    const plainResponse = JSON.parse(JSON.stringify(newAssignmentResponse));
+    
     await activityDB.transaction('rw', [activityDB.assignments, activityDB.assignmentResponses], async () => {
-      await activityDB.assignments.add(newAssignment);
-      await activityDB.assignmentResponses.add(newAssignmentResponse);
+      await activityDB.assignments.add(plainAssignment);
+      await activityDB.assignmentResponses.add(plainResponse);
     });
 
-    // Add to the current assignments list in the store
-    assignments.value.push(newAssignment);
-
-    let uploadedPhotoId: string | null = null;
-
-    // If a photo is provided, queue it for upload first
-    if (data.photo) {
-      // For now, we'll assume direct upload and get ID.
-      // In a more robust offline scenario, this would also be queued.
-      // For simplicity, we'll simulate the upload and get an ID.
-      // In a real app, this would be handled by syncEngine.queueForSync('uploadPhoto', ...)
-      // and then the createAssignment would be queued only after photo upload success.
-      // For this iteration, we'll assume the photo is uploaded immediately if online.
-      if (navigator.onLine) {
-        try {
-          const uploadResponse = await apiClient.uploadAssignmentPhoto(
-            activity.value.id, // activityId
-            newAssignmentId, // interviewId (using assignmentId for now)
-            data.photo // File object
-          );
-          if (uploadResponse.fileId) {
-            uploadedPhotoId = uploadResponse.fileId;
-            console.log('Photo uploaded, ID:', uploadedPhotoId);
-          } else {
-            console.warn('Photo upload successful but no fileId returned.');
-          }
-        } catch (uploadError) {
-          console.error('Failed to upload photo immediately:', uploadError);
-          f7.toast.show({ text: 'Gagal mengunggah foto. Assignment akan dibuat tanpa foto.', position: 'bottom', cssClass: 'error-toast' });
-          // Continue without photo if upload fails
-        }
-      } else {
-        // If offline, we need a more sophisticated queuing mechanism
-        // For now, we'll proceed without photo if offline and cannot upload immediately.
-        // A future enhancement would be to queue the photo upload separately and link it later.
-        f7.toast.show({ text: 'Offline: Foto tidak dapat diunggah sekarang. Assignment akan dibuat tanpa foto.', position: 'bottom', cssClass: 'warning-toast' });
-      }
-    }
-
-    // Update prefilled_data with photo_id if uploaded
-    if (uploadedPhotoId) {
-      newAssignment.prefilled_data.photo_id = uploadedPhotoId;
-      delete newAssignment.prefilled_data.photo; // Remove the File object
-    }
-
-    // Queue for sync
+    // Update the local state to make the new assignment appear instantly
+    assignments.value.push(plainAssignment);
+    
+    // Step 4: Queue the creation for background synchronization
     await syncEngine.queueForSync('createAssignment', {
-      assignment: newAssignment,
-      assignmentResponse: newAssignmentResponse,
-      // Photo is now handled via photo_id in prefilled_data, not as a separate payload item
+      assignment: plainAssignment,
+      assignmentResponse: plainResponse,
     });
 
-    console.log('New assignment created and queued for sync:', newAssignment);
+    console.log('New assignment created locally and queued for sync:', newAssignment.id);
   }
 
   function reset() {
@@ -313,38 +365,60 @@ export const useDashboardStore = defineStore('dashboard', () => {
     assignments.value = [];
     formSchema.value = null;
     masterSls.value = [];
-    authStore.setActiveRole(null); // Clear active role on reset
+    authStore.setActiveRole(null);
     console.log('DashboardStore: Reset.');
   }
 
   async function hasUnsyncedData(): Promise<boolean> {
-    if (!currentUserId.value) {
-      console.log('Cannot check for unsynced data, no user ID found.');
-      return false; // No user, no data
-    }
+    if (!currentUserId.value) return false;
     try {
-      // Asumsi: status 'Assigned' adalah status awal dari server.
-      // Status lain ('Submitted by PPL', 'Approved by PML', dll.) 
-      // menunjukkan ada perubahan lokal yang mungkin belum sinkron.
       const unsyncedCount = await activityDB.assignments
-        .where('user_id').equals(currentUserId.value)
-        .and(assignment => assignment.status !== 'Assigned' && assignment.status !== null && assignment.status !== undefined && assignment.status !== '')
+        .where({ user_id: currentUserId.value, status: 'PENDING' })
         .count();
-
-      if (unsyncedCount > 0) {
-        console.log(`Found ${unsyncedCount} unsynced assignments.`);
-        return true;
-      }
-      
-      // TODO: Di masa depan, ini bisa diperluas untuk memeriksa tabel lain
-      // seperti 'surveyResults' jika ada.
-
-      console.log('No unsynced data found.');
-      return false;
+      return unsyncedCount > 0;
     } catch (error) {
       console.error('Error checking for unsynced data:', error);
-      return false; // Jika terjadi error, anggap tidak ada untuk mencegah user terjebak
+      return false;
     }
+  }
+
+  // This is a helper function if you need to add an assignment from another part of the app
+  function addAssignment(newAssignment: Assignment) {
+    if (!assignments.value.some(a => a.id === newAssignment.id)) {
+      assignments.value.push(newAssignment);
+    }
+  }
+
+  async function deletePendingAssignment(assignmentId: string) {
+    return new Promise<void>((resolve, reject) => {
+      f7.dialog.confirm( 'Are you sure you want to delete this assignment? This action cannot be undone.', 'Confirm Deletion',
+        async () => {
+          try {
+            const assignmentToDelete = await activityDB.assignments.get(assignmentId);
+            if (assignmentToDelete?.status !== 'PENDING') {
+              f7.dialog.alert('Only assignments with PENDING status can be deleted.');
+              return reject(new Error('Deletion not allowed'));
+            }
+
+            await activityDB.transaction('rw', [activityDB.assignments, activityDB.assignmentResponses], async () => {
+              await activityDB.assignments.delete(assignmentId);
+              await activityDB.assignmentResponses.where({ assignment_id: assignmentId }).delete();
+            });
+
+            const index = assignments.value.findIndex(a => a.id === assignmentId);
+            if (index !== -1) assignments.value.splice(index, 1);
+
+            f7.toast.show({ text: 'Assignment deleted successfully.', cssClass: 'success-toast', position: 'bottom', closeTimeout: 3000 });
+            resolve();
+          } catch (error) {
+            console.error('Error deleting assignment:', error);
+            f7.dialog.alert('Failed to delete assignment.');
+            reject(error);
+          }
+        },
+        () => reject(new Error('User cancelled'))
+      );
+    });
   }
 
   return {
@@ -360,6 +434,9 @@ export const useDashboardStore = defineStore('dashboard', () => {
     syncDelta,
     syncFull,
     reset,
-    hasUnsyncedData, // <-- Ekspor aksi baru
+    hasUnsyncedData,
+    addAssignment,
+    deletePendingAssignment,
+    createNewAssignment,
   };
 });

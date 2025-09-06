@@ -27,7 +27,7 @@ import pinia from './pinia';
 // Import Stores and Services
 import { useAuthStore } from './stores/authStore';
 import apiClient from './services/ApiClient';
-import { syncEngine } from './services/sync/SyncEngine';
+import syncEngine from './services/sync/SyncEngine';
 
 // Import Capacitor PWA Elements
 import { defineCustomElements } from '@ionic/pwa-elements/loader';

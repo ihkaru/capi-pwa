@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia';
 import { f7 } from 'framework7-vue';
-import SyncEngine from '../sync/SyncEngine';
+import syncEngine from '../services/sync/SyncEngine';
 
 export const useSyncStore = defineStore('sync', {
   state: () => ({
@@ -12,7 +12,7 @@ export const useSyncStore = defineStore('sync', {
       this.isSyncing = true;
       this.lastSyncError = null;
       try {
-        await SyncEngine.getInstance().performDeltaDownloadSync(activityId);
+        await syncEngine.performDeltaDownloadSync(activityId);
         this.showNotification('Delta sync completed successfully!', 'green');
       } catch (error: any) {
         this.lastSyncError = error.message || 'Unknown sync error';
@@ -27,7 +27,7 @@ export const useSyncStore = defineStore('sync', {
       this.isSyncing = true;
       this.lastSyncError = null;
       try {
-        await SyncEngine.getInstance().performFullDownloadSync(activityId);
+        await syncEngine.performFullDownloadSync(activityId);
         this.showNotification('Full sync completed successfully!', 'green');
       } catch (error: unknown) { // Changed to unknown
         this.lastSyncError = (error as Error).message || 'Unknown sync error'; // Cast to Error

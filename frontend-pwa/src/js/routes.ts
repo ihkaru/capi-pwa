@@ -50,6 +50,11 @@ const routes = [
     ...createAuthRoute(HomePage),
   },
   {
+    path: '/assignment/new',
+    name: 'NewAssignmentForm',
+    ...createAuthRoute(InterviewFormPage),
+  },
+  {
     path: '/assignment/:assignmentId/',
     name: 'InterviewForm',
     ...createAuthRoute(InterviewFormPage),

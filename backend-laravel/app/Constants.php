@@ -19,6 +19,7 @@ class Constants
     public const STATUS_REJECTED_ADMIN = 'Rejected by Admin';
     public const STATUS_APPROVED_PML = 'Approved by PML';
     public const STATUS_APPROVED_ADMIN = 'Approved by Admin';
+    public const STATUS_SUBMITTED_LOCAL = 'Submitted Local'; // New status for locally submitted but not yet synced assignments
 
     public static function getResponseStatuses(): array
     {
@@ -30,6 +31,7 @@ class Constants
             self::STATUS_REJECTED_ADMIN,
             self::STATUS_APPROVED_PML,
             self::STATUS_APPROVED_ADMIN,
+            self::STATUS_SUBMITTED_LOCAL,
         ];
     }
 }
