@@ -123,11 +123,10 @@ class SyncEngine {
             );
             break;
           case 'createAssignment':
-            // Assuming payload contains { assignment, assignmentResponse, photo }
+            // Assuming payload contains { assignment, assignmentResponse }
             response = await apiClient.createAssignment(
               item.payload.assignment,
               item.payload.assignmentResponse,
-              item.payload.photo // Optional photo data
             );
             break;
 

@@ -56,7 +56,7 @@ Ini adalah tahap pertama yang dimodelkan sebagai `Kegiatan Statistik` mandiri di
     - Untuk setiap keluarga yang ditemui, PPL membuat entri data baru.
     - **Pengambilan Geotag:** Saat PPL berinteraksi dengan field geotag, PWA akan mengambil data `latitude`, `longitude`, dan `accuracy` dari perangkat.
     - **Pengambilan Foto:** Saat PPL berinteraksi dengan field foto, PWA akan membuka kamera. Setelah foto diambil dan dioptimalkan, PWA akan menanganinya untuk sinkronisasi.
-    - **Proses Sinkronisasi Foto:** Proses `SyncEngine` harus cerdas. Ia akan mengunggah file foto ke endpoint media khusus. Server akan menyimpan file tersebut dan mengembalikan sebuah ID unik. `SyncEngine` kemudian akan memperbarui data respons dengan ID referensi ini. Hasilnya, `responses` akan menyimpan _referensi unik_ (misalnya, sebuah ID) ke file foto yang telah diunggah, bukan file foto itu sendiri.
+    - **Proses Sinkronisasi Foto:** Proses `SyncEngine` harus cerdas. Ia akan mengunggah file foto ke endpoint media khusus. Server akan menyimpan file tersebut dan mengembalikan sebuah ID unik. `SyncEngine` kemudian akan memperbarui data respons dengan ID referensi ini. Hasilnya, `responses` akan menyimpan _referensi unik_ (misalnya, sebuah ID) ke file foto yang telah diunggah, bukan file foto itu sendiri. (Lihat `AssignmentPhotoController`)
 
 3.  **Output & Hasil Akhir:**
     - Hasil dari fase Listing adalah `assignment_responses` yang bersih dan tervalidasi, di mana setiap record berisi data identitas keluarga, objek koordinat geospasial, dan ID referensi ke file foto.
@@ -104,11 +104,8 @@ Kegiatan lapangan tidak pernah berjalan mulus sepenuhnya. Platform Cerdas harus 
 ### Skenario A: Penambahan Unit Observasi Baru di Lapangan (Saat Listing)
 
 - **Situasi:** Seorang PPL sedang melakukan listing di sebuah SLS. Ia menemukan sebuah rumah baru yang dihuni oleh satu keluarga yang belum pernah terdata sebelumnya.
-- **Implikasi Fitur untuk Cerdas Mobile (PWA):**
-  - Antarmuka PWA dalam `Assignment` Listing (yang berbasis wilayah/SLS) **wajib memiliki fitur "Tambah Keluarga Baru"**.
-  - Fitur ini memungkinkan PPL untuk membuat dan mengisi satu set kuesioner Listing baru (termasuk geotag dan foto) yang akan terasosiasi dengan `Assignment` SLS tersebut. PPL harus bisa melakukan ini berulang kali untuk setiap keluarga baru yang ditemukannya.
-- **Implikasi Fitur untuk Cerdas-SM (Backend):**
-  - Backend harus mampu menerima dan memproses data dari entitas-entitas baru yang dibuat secara dinamis oleh PPL di lapangan.
+- **Implikasi Fitur untuk Cerdas Mobile (PWA) & Cerdas-SM (Backend):**
+  - Implementasi detail untuk skenario ini, termasuk penambahan fitur "Tambah Keluarga Baru" di PWA dan penanganan data di backend, dijelaskan secara komprehensif dalam dokumen terpisah: **`ppl-new-assignment-creation.md`**.
 
 ### Skenario B: Penanganan Unit Observasi Tidak Ditemukan (Saat Pendataan)
 

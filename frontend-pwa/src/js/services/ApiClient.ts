@@ -436,13 +436,11 @@ class ApiClient {
    */
   public async createAssignment(
     assignment: any,
-    assignmentResponse: any,
-    photo: string | null
+    assignmentResponse: any
   ): Promise<any> {
     const payload = {
       assignment: assignment,
       assignment_response: assignmentResponse,
-      photo: photo,
     };
     return this.axiosInstance.post(`/activities/${assignment.kegiatan_statistik_id}/assignments/create`, payload);
   }

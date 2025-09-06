@@ -122,10 +122,4 @@ If a status other than 'Selesai Dicacah' is selected, the remaining questions in
 
 ### 5.6. PPL New Assignment Creation
 
-For "Listing" type activities, the PWA must provide a mechanism for PPLs to create new, top-level assignments (e.g., new families/households) directly from the field. This is for cases where new entities are discovered that were not part of the initial pre-list.
-
--   **Trigger:** A dedicated UI element (e.g., a "Tambah Keluarga Baru" button) will be available, likely on the Assignment List Page or Activity Dashboard Page when viewing a Listing activity.
--   **Data Collection:** A simplified form or modal will guide the PPL to collect essential initial data for the new assignment (e.g., family head name, address, geotag, photo). This data will be used to create the new `Assignment` and `Assignment Response` records.
-    -   **Prefilling Geographical Data:** If the new assignment is initiated from a specific geographical group context (e.g., from `AssignmentListPage` filtered by a `level_6_code`), the new assignment's `level_1_code` to `level_6_code` and their corresponding labels will be automatically prefilled based on that context.
--   **Backend Integration:** The collected data will be sent to a specific API endpoint to create the new assignment in the backend.
--   **Offline Support:** The new assignment will be created locally first and then queued for synchronization with the backend.
+For details on the PPL New Assignment Creation feature, including its functional and technical specifications, please refer to the dedicated document: **`ppl-new-assignment-creation.md`**.

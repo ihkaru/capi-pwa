@@ -81,6 +81,8 @@ Sistem mendukung dua metode autentikasi: email/password tradisional dan Single S
 2.  Backend menemukan `User` berdasarkan `google_id` yang cocok.
 3.  Login berhasil seketika.
 
+*Untuk detail implementasi teknis login, lihat `App\Http\Controllers\Auth\LoginController` dan `App\Http\Controllers\Auth\GoogleLoginController` di `GEMINI.md`.*
+
 ### 2.3. Peran Pengguna (Dikelola oleh Filament Shield)
 
 Peran bersifat kontekstual dan diberikan kepada pengguna dalam lingkup `Kegiatan Statistik` tertentu.
@@ -155,7 +157,7 @@ Saat sebuah `Assignment` dibuat, `Assignment Response` baru juga dibuat secara o
 
 1.  **Persiapan & Pengunduhan Awal Kegiatan (Per-Kegiatan):** Setelah PPL memilih sebuah kegiatan dari halaman beranda PWA, aplikasi akan memulai proses persiapan untuk kerja offline:
     a. **Pengecekan Lokal:** Aplikasi memeriksa apakah data inti untuk kegiatan ini sudah ada di IndexedDB.
-    b. **Unduh Data Inti:** Jika belum ada, PWA memanggil endpoint `initial-data/{activityId}` untuk mengunduh `Assignment` yang ditugaskan, `form_schema` versi terbaru, dan data relevan lainnya.
+    b. **Unduh Data Inti:** Jika belum ada, PWA memanggil endpoint `initial-data/{activityId}` untuk mengunduh `Assignment` yang ditugaskan, `form_schema` versi terbaru, dan data relevan lainnya. (Lihat `ActivityController::getInitialData`)
     c. **Identifikasi & Unduh Master Data:** PWA mem-parsing properti `masters_used` di `form_schema` dan mengunduh semua master data yang diperlukan.
     d. **Simpan ke Lokal:** Semua data disimpan ke IndexedDB. UI harus menampilkan progres yang jelas selama proses ini.
 
@@ -168,7 +170,7 @@ Saat sebuah `Assignment` dibuat, `Assignment Response` baru juga dibuat secara o
 4.  **Submit:** Setelah selesai, PPL menekan tombol "Submit".
     - Di PWA, status `Assignment Response` diubah menjadi **`Submitted by PPL`**.
     - Antarmuka formulir untuk assignment tersebut menjadi **terkunci (read-only)** bagi PPL.
-    - Aksi "submit" ini beserta seluruh datanya dimasukkan ke dalam antrean sinkronisasi (`sync_queue`).
+    - Aksi "submit" ini beserta seluruh datanya dimasukkan ke dalam antrean sinkronisasi (`sync_queue`). (Lihat `ActivityController::submitAssignments`)
 5.  **Sinkronisasi ke Server:** Saat perangkat PPL online, `SyncEngine` mengirimkan data ke server. Server memvalidasi data, memastikan PPL memiliki izin, dan memperbarui `status` di database menjadi **`Submitted by PPL`**.
 
 ### **Tahap 3: Pemeriksaan oleh PML (dilakukan di PWA)**
@@ -178,7 +180,7 @@ Saat sebuah `Assignment` dibuat, `Assignment Response` baru juga dibuat secara o
 3.  **Proses Review:** PML memilih sebuah assignment untuk diperiksa. PWA menampilkan data `Assignment Response` yang telah diisi PPL. Tergantung `form_schema`, beberapa field mungkin bisa diedit oleh PML, sementara yang lain bersifat read-only.
 4.  **Keputusan Pemeriksaan:**
 
-- **Prasyarat - Pengecekan Aksi Online:** Sebelum menampilkan tombol "Approve" atau "Reject", PWA **wajib** melakukan panggilan ke API server (misalnya, `GET /api/assignments/{id}/allowed-actions`). Panggilan ini bertujuan untuk mengkonfirmasi aksi apa yang diizinkan oleh sistem pada saat itu. Jika perangkat PML sedang offline, tombol-tombol aksi ini akan dinonaktifkan atau disembunyikan.
+- **Prasyarat - Pengecekan Aksi Online:** Sebelum menampilkan tombol "Approve" atau "Reject", PWA **wajib** melakukan panggilan ke API server (misalnya, `GET /api/assignments/{id}/allowed-actions`). Panggilan ini bertujuan untuk mengkonfirmasi aksi apa yang diizinkan oleh sistem pada saat itu. Jika perangkat PML sedang offline, tombol-tombol aksi ini akan dinonaktifkan atau disembunyikan. (Lihat `ActivityController::getAllowedActions`)
 - **Skenario A: Approve (Data Diterima):**
   - PML menekan tombol "Approve".
   - Di PWA, status `Assignment Response` diubah menjadi **`Approved by PML`**.
@@ -193,6 +195,8 @@ Saat sebuah `Assignment` dibuat, `Assignment Response` baru juga dibuat secara o
   - PWA menampilkan modal yang **opsional** bagi PML untuk mengisi alasan pembatalan (`notes`).
   - Di PWA, status `Assignment Response` diubah menjadi **`Submitted by PPL`** dan `notes` disimpan.
   - Aksi "batalkan persetujuan" ini dimasukkan ke dalam `sync_queue` PML.
+
+*Untuk detail implementasi teknis perubahan status, lihat `AssignmentStatusController::update`.*
 
 5.  **Sinkronisasi Keputusan:** Saat perangkat PML online, `SyncEngine` mengirimkan keputusan (approve/reject) ke server. Server memvalidasi (memastikan PML berwenang) dan memperbarui `status` di database.
 

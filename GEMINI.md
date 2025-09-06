@@ -133,8 +133,8 @@ The high-level roadmap remains the same, with our focus still on the main CAPI f
 ### **4. Current Multi-Session Focus: The Dynamic Form Engine**
 
 *   **Goal:** To build the `InterviewFormPage.vue` into a flexible engine capable of rendering complex surveys from a JSON schema.
-*   **Current Action:** The PPL data entry and PML data review workflows are now functionally complete. The form correctly renders and protects data based on user role and status.
-*   **Next Step:** Implement the PPL's repair cycle after an assignment is rejected by PML or Admin. This involves displaying rejection notes to the PPL and enabling them to edit and re-submit the assignment, as described in "Tahap 4: Siklus Perbaikan" of `alur-kerja.md`.
+*   **Current Action:** The PPL data entry and PML data review workflows are now functionally complete. The form correctly renders and protects data based on user role and status. The PPL's repair cycle (displaying rejection notes, unlocking form, re-submission) is also considered complete.
+*   **Next Step:** Implement the "PPL New Assignment Creation" feature. This involves adding a Floating Action Button (FAB) to `AssignmentListPage.vue` (conditionally displayed for PPLs on activities that allow new assignment creation), which navigates directly to `InterviewFormPage.vue` in a "create mode". Initial data collection (respondent name, geotag, photo) will occur within `InterviewFormPage.vue` using the dynamic form engine, with geographical data pre-filled from the selected assignment group. The photo upload will follow a two-step process (upload first, then reference ID). This also requires adding a new `allow_new_assignments_from_pwa` boolean column to the `kegiatan_statistiks` table in the backend.
 
 ## Crucial Lessons Learned
 
@@ -142,7 +142,9 @@ The high-level roadmap remains the same, with our focus still on the main CAPI f
     *   **Mistake:** The `responses` attribute (cast as `array`) was being serialized as an empty JSON array (`"[]"`) instead of an empty JSON object (`"{}"`) when empty, causing frontend data binding issues.
     *   **Lesson:** When an `array` cast attribute is empty, Laravel's default JSON serialization converts it to `[]`. To ensure it serializes as `{}`, a custom accessor (`getResponsesAttribute`) was implemented in the `AssignmentResponse` model to always return an object, even if the underlying database value is `null` or `[]`.
 
-
+13. **Photo Upload Strategy for New Assignments:**
+    *   **Mistake:** Initial implementation passed the photo as a base64 string directly within the `createAssignment` payload, deviating from the specification.
+    *   **Lesson:** The specification (`studi-kasus-kegiatan.md`) requires a two-step process: first, upload the photo to a dedicated media endpoint to obtain a unique ID, and then include this ID in the `assignmentResponse` when creating the new assignment. This ensures efficient storage and proper referencing of media assets.
 
 During the development of the Dynamic Form Engine, several crucial lessons were learned that highlight the importance of adhering to architectural principles and thoroughly understanding framework specifics:
 
@@ -150,42 +152,86 @@ During the development of the Dynamic Form Engine, several crucial lessons were 
     *   **Mistake:** The camera failed to open with no errors in the console.
     *   **Lesson:** When an interactive feature fails silently, it's often a browser security or permissions issue, not a logic bug. The `await` for a permission check was breaking the "user gesture" chain required by the browser. The fix was to use a more standard `<input type="file">` approach, which is more robust.
 
-2.  **On Build Errors, Verify the Import First:**
-    *   **Mistake:** When a build error `Failed to resolve import` occurred, I assumed the user's environment was broken.
-    *   **Lesson:** The true cause was an incorrect import path and a missing dependency (`@ionic/pwa-elements`). **Lesson:** Always treat build-time import errors as a code/dependency issue first. A targeted web search for the exact error message is the most efficient first step.
-
-3.  **On File Updates, Prefer Overwriting to Replacing:**
+2.  **On Build Errors, Prefer Overwriting to Replacing:**
     *   **Mistake:** The `replace` tool failed repeatedly and sometimes corrupted files when updating large, complex components.
     *   **Lesson:** For wholesale updates, it is far more reliable for me to `read_file` to get the latest content and then `write_file` to overwrite the entire file with the desired changes. This avoids any possibility of a mismatch or corruption.
 
-4.  **Trust the Spec, but Verify the Data Source:**
+3.  **Trust the Spec, but Verify the Data Source:**
     *   **Mistake:** The initial form was blank. I assumed a frontend rendering bug.
     *   **Lesson:** The root cause was an empty `pages` array in the `form_schema` coming from the backend database seeder. **Lesson:** Always verify the actual data at its source early in the debugging process.
 
-5.  **Understand the Full Data Lifecycle & Framework "Magic":**
+4.  **Understand the Full Data Lifecycle & Framework "Magic":**
     *   **Mistake:** A `TypeError` crashed the backend when trying to log schema details.
     *   **Lesson:** The seeder was saving a raw JSON string, which Laravel's model casting then re-encoded, creating a double-encoded and invalid JSON in the database. **Lesson:** Be acutely aware of implicit framework transformations (like model casting).
 
-6.  **Ensure Data Consistency Across Local Storage Layers:**
+5.  **Ensure Data Consistency Across Local Storage Layers:**
     *   **Mistake:** The app crashed with a `JSON.parse` error after fixing the backend.
     *   **Lesson:** The `dashboardStore` saved the schema to the local DB as a JavaScript object, but the `formStore` tried to read it as a JSON string. **Lesson:** The "contract" for data formats between application components must be explicit and consistent.
 
-7.  **On UI Bugs, Suspect the Library First:**
+6.  **On UI Bugs, Suspect the Library First:**
     *   **Mistake:** The validation summary counts refused to display in a `<f7-popup>`, even though debugging showed the data in the store was correct.
     *   **Lesson:** When data is correct but a specific UI component doesn't update, suspect a reactivity bug in the component library itself. The issue was not in my logic, but a subtle bug in how the Framework7 popup/list-item components handle reactive data. The fix was to bypass the buggy component (`<f7-list-item>`) with a custom `div`-based template and to make the `@click` handler read from the store directly, ignoring the component's stale state.
 
-8.  **Roles are Contextual, Not Global:**
+7.  **Roles are Contextual, Not Global:**
     *   **Mistake:** Assumed the user's role (`PPL` or `PML`) was a global property on the main user object.
     *   **Lesson:** The user's role is defined *per activity*. The application state must reflect this. The correct pattern is to have an `activeRole` in the `authStore` that is set when the user selects an activity from the dashboard. All role-based logic must then use this `activeRole` instead of `user.role`.
 
-9.  **Verify Full API Payloads for All Roles:**
+8.  **Verify Full API Payloads for All Roles:**
     *   **Mistake:** The form was empty for the PML because the API wasn't sending the PPL's answers.
     *   **Lesson:** When implementing features for a new role (e.g., PML), explicitly verify the full API payload for that role's context. The `/initial-data` endpoint needed to be modified on the backend to include the `assignmentResponses` array for PML users, which was a step missed during initial development.
 
-10. **Defend Against Double-Encoded JSON:**
+9.  **Defend Against Double-Encoded JSON:**
     *   **Mistake:** The form was still empty even after the API was sending the `assignmentResponses`.
     *   **Lesson:** The `responses` field inside the `assignmentResponses` object was being sent as a string instead of a JSON object. This is a common issue with Laravel API Resources. The frontend must be defensive; if a field that should be an object is a string, `JSON.parse()` it. Log this and flag it as a backend issue to be fixed permanently.
 
-11. **UI Actions Must Be State-Aware:**
+10. **UI Actions Must Be State-Aware:**
     *   **Mistake:** Clicking a synced image preview triggered the camera upload instead of a viewer.
     *   **Lesson:** The same UI element can have different behaviors based on context. The `handleImageClick` function should check the state (e.g., `isQuestionDisabled` or if the image `src` is a `data:` URL vs. an `http` URL) to decide whether to open the Photo Browser (for viewing) or the camera (for editing).
+
+## Mitigation Strategy for Duplication
+
+To prevent duplication of effort and ensure a cohesive, maintainable codebase, the following strategies will be rigorously applied:
+
+1.  **"Read-Only First" Principle (Reinforced):** Before proposing any new code or modifications, I will always start by thoroughly reading existing code, documentation (`spec/` directory), and relevant configuration files. This ensures a deep understanding of current implementations and avoids re-solving already solved problems.
+
+2.  **"Confirm Before Modify" Checkpoint (Reinforced):** For any non-trivial changes, I will explicitly state my intention, my reasoning, and the exact proposed modifications. I will then ask for explicit confirmation before I proceed.
+
+3.  **"Working Code is Gospel" Mandate (Reinforced):** If my analysis suggests a problem but the application is functioning correctly, I will prioritize understanding *why* it works over immediately "fix" it. This prevents unnecessary refactoring of stable code and encourages a deeper investigation into the existing patterns.
+
+4.  **Explicit Feature Specifications:** For every new feature, a detailed, written specification will be created. This spec will clearly outline:
+    *   **Frontend Requirements:** UI components, state management (Pinia), and interaction logic.
+    *   **Backend Requirements:** API endpoints, data models, validation, and business logic.
+    *   **Synchronization Logic:** How data flows between frontend (Dexie.js), `SyncEngine`, and backend, especially for offline capabilities.
+    *   **Cross-cutting Concerns:** How the feature interacts with authentication, authorization, and error handling.
+    This comprehensive approach ensures all parts of the system are considered and designed in concert.
+
+5.  **Cross-referencing and Leveraging Existing Documentation:** I will continuously refer to and leverage the existing `spec/` documents (`alur-kerja.md`, `db.md`, `dynamic-form-engine.md`, `studi-kasus-kegiatan.md`). This ensures that new features align with the established architecture, data models, and workflows, preventing the introduction of conflicting patterns or redundant logic.
+
+6.  **Modular Design and Reusability:** I will prioritize creating small, focused, and reusable functions, components, and services. Before writing new code, I will actively search for existing modules that can be extended or composed to achieve the desired functionality.
+
+7.  **Unit and Integration Tests:** Where applicable, I will propose and assist in writing unit and integration tests for new features. This not only validates the correctness of the new implementation but also acts as a safeguard against accidental duplication or regression of existing functionality.
+
+## Backend Controller Overview
+
+To prevent the creation of redundant controllers and ensure a clear understanding of the backend's responsibilities, this section outlines the purpose of each existing API controller.
+
+### `App\Http\Controllers\Auth\LoginController`
+- **Purpose**: Handles traditional email/password authentication. Its primary function is to validate user credentials and issue API tokens upon successful login.
+
+### `App\Http\Controllers\Auth\GoogleLoginController`
+- **Purpose**: Manages user authentication via Google Single Sign-On (SSO). It handles the redirection to Google, processes the authentication callback, and either logs in an existing user (linking their Google ID if not already linked) or creates a new "floating" user account if they don't exist in the system.
+
+### `App\Http\Controllers\ActivityController`
+- **Purpose**: A comprehensive controller for managing statistical activities and their associated assignments. It provides a range of functionalities including:
+    - Listing activities a user is involved in (`index`).
+    - Fetching initial data for a specific activity, which includes assignments, their responses, the form schema, and relevant master data (`getInitialData`).
+    - Handling the submission of completed assignments by PPLs (Petugas Pencacah Lapangan), incorporating optimistic locking to prevent data conflicts (`submitAssignments`).
+    - Retrieving a list of allowed actions for a given assignment based on its current status and the user's role (`getAllowedActions`).
+    - Facilitating the creation of new assignments directly from the PWA, including data validation and initial setup (`createAssignment`).
+    - Includes a placeholder for future delta synchronization logic (`getUpdates`).
+
+### `App\Http\Controllers\AssignmentPhotoController`
+- **Purpose**: Dedicated to handling photo uploads related to assignments. It provides an endpoint to upload photos for existing assignments (`upload`).
+
+### `App\Http\Controllers\AssignmentStatusController`
+- **Purpose**: Manages the updating of assignment statuses. This controller is primarily used by PMLs (Petugas Pemeriksa Lapangan) to approve, reject, or revert the approval of assignments. It includes robust authorization checks to ensure that only authorized PMLs can perform these status updates.

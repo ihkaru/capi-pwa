@@ -254,11 +254,53 @@ export const useDashboardStore = defineStore('dashboard', () => {
     // Add to the current assignments list in the store
     assignments.value.push(newAssignment);
 
+    let uploadedPhotoId: string | null = null;
+
+    // If a photo is provided, queue it for upload first
+    if (data.photo) {
+      // For now, we'll assume direct upload and get ID.
+      // In a more robust offline scenario, this would also be queued.
+      // For simplicity, we'll simulate the upload and get an ID.
+      // In a real app, this would be handled by syncEngine.queueForSync('uploadPhoto', ...)
+      // and then the createAssignment would be queued only after photo upload success.
+      // For this iteration, we'll assume the photo is uploaded immediately if online.
+      if (navigator.onLine) {
+        try {
+          const uploadResponse = await apiClient.uploadAssignmentPhoto(
+            activity.value.id, // activityId
+            newAssignmentId, // interviewId (using assignmentId for now)
+            data.photo // File object
+          );
+          if (uploadResponse.fileId) {
+            uploadedPhotoId = uploadResponse.fileId;
+            console.log('Photo uploaded, ID:', uploadedPhotoId);
+          } else {
+            console.warn('Photo upload successful but no fileId returned.');
+          }
+        } catch (uploadError) {
+          console.error('Failed to upload photo immediately:', uploadError);
+          f7.toast.show({ text: 'Gagal mengunggah foto. Assignment akan dibuat tanpa foto.', position: 'bottom', cssClass: 'error-toast' });
+          // Continue without photo if upload fails
+        }
+      } else {
+        // If offline, we need a more sophisticated queuing mechanism
+        // For now, we'll proceed without photo if offline and cannot upload immediately.
+        // A future enhancement would be to queue the photo upload separately and link it later.
+        f7.toast.show({ text: 'Offline: Foto tidak dapat diunggah sekarang. Assignment akan dibuat tanpa foto.', position: 'bottom', cssClass: 'warning-toast' });
+      }
+    }
+
+    // Update prefilled_data with photo_id if uploaded
+    if (uploadedPhotoId) {
+      newAssignment.prefilled_data.photo_id = uploadedPhotoId;
+      delete newAssignment.prefilled_data.photo; // Remove the File object
+    }
+
     // Queue for sync
     await syncEngine.queueForSync('createAssignment', {
       assignment: newAssignment,
       assignmentResponse: newAssignmentResponse,
-      photo: data.photo, // Pass photo data for upload
+      // Photo is now handled via photo_id in prefilled_data, not as a separate payload item
     });
 
     console.log('New assignment created and queued for sync:', newAssignment);
