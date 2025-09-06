@@ -428,6 +428,26 @@ class ApiClient {
   }
 
   /**
+   * Creates a new assignment from the PWA.
+   * @param assignment The assignment object to create.
+   * @param assignmentResponse The assignment response object to create.
+   * @param photo Base64 string of the photo, if any.
+   * @returns {Promise<any>} The response from the API.
+   */
+  public async createAssignment(
+    assignment: any,
+    assignmentResponse: any,
+    photo: string | null
+  ): Promise<any> {
+    const payload = {
+      assignment: assignment,
+      assignment_response: assignmentResponse,
+      photo: photo,
+    };
+    return this.axiosInstance.post(`/activities/${assignment.kegiatan_statistik_id}/assignments/create`, payload);
+  }
+
+  /**
    * Updates the status of an assignment response.
    * @param {string} assignmentId - The ID of the assignment response.
    * @param {string} status - The new status.

@@ -19,6 +19,7 @@ class KegiatanStatistik extends Model
         'extended_end_date',
         'form_schema',
         'form_version',
+        'allow_new_assignments_from_pwa',
     ];
 
     protected $casts = [
@@ -26,6 +27,7 @@ class KegiatanStatistik extends Model
         'end_date' => 'date',
         'extended_end_date' => 'date',
         'form_schema' => 'array',
+        'allow_new_assignments_from_pwa' => 'boolean',
     ];
 
     public function satkers(): BelongsToMany

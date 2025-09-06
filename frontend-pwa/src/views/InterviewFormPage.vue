@@ -17,7 +17,7 @@
         <f7-fab-button label="Ringkasan Validasi" @click="summaryPopupOpened = true">
           <f7-icon f7="exclamationmark_triangle_fill"></f7-icon>
         </f7-fab-button>
-        <f7-fab-button v-if="!isPmlMode" label="Submit" @click="submitForm" :disabled="isFormLocked">
+        <f7-fab-button v-if="!isPmlMode && !isFormLocked" label="Submit" @click="submitForm" :disabled="isFormLocked">
           <f7-icon f7="paperplane_fill"></f7-icon>
         </f7-fab-button>
         <f7-fab-button v-if="isPmlMode && allowedActions.includes('APPROVE')" label="Approve"
@@ -239,11 +239,11 @@
 
       <f7-block class="form-nav-container">
         <div class="form-nav-buttons">
-          <f7-button large :disabled="currentPageIndex === 0 || isFormLocked" @click="prevPage" class="nav-button prev-button">
+          <f7-button large :disabled="currentPageIndex === 0" @click="prevPage" class="nav-button prev-button">
             <f7-icon f7="chevron_left" class="margin-right-half"></f7-icon>
             Sebelumnya
           </f7-button>
-          <f7-button large fill :disabled="currentPageIndex >= formStore.pages.length - 1 || isFormLocked" @click="nextPage"
+          <f7-button large fill :disabled="currentPageIndex >= formStore.pages.length - 1" @click="nextPage"
             class="nav-button next-button">
             Selanjutnya
             <f7-icon f7="chevron_right" class="margin-left-half"></f7-icon>

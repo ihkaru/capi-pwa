@@ -50,6 +50,7 @@ class KegiatanStatistikResource extends JsonResource
             'year' => $this->year,
             'user_role' => $userRole, // This needs to be accurate for the specific activity
             'status' => $status,
+            'allow_new_assignments_from_pwa' => (bool)$this->allow_new_assignments_from_pwa,
         ];
     }
 }

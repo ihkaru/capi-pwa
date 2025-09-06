@@ -32,6 +32,7 @@ class KegiatanStatistikSeeder extends Seeder
                 'end_date' => Carbon::create(2022, 11, 14),
                 'form_schema' => json_decode($listingSchemaJson, true),
                 'form_version' => 1,
+                'allow_new_assignments_from_pwa' => true,
             ]
         );
 

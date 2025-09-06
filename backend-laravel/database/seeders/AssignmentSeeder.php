@@ -81,12 +81,38 @@ class AssignmentSeeder extends Seeder
                 'level_6_code_full' => $sls->prov_id . substr($sls->sls_id, -2) . substr($sls->sls_id, -3) . substr($sls->sls_id, -3) . substr($sls->sls_id, -4) . "00",
             ]);
 
-            AssignmentResponse::create([
+            $assignmentResponseData = [
                 'assignment_id' => $assignment->id,
-                'status' => Constants::STATUS_ASSIGNED,
                 'form_version_used' => $kegiatan->form_version,
-                'responses' => json_encode([]),
-            ]);
+            ];
+
+            if ($kegiatanName === 'REGSOSEK 2022 - LISTING') {
+                $responses = [
+                    'nama_krt' => $faker->name,
+                    'alamat' => $faker->address,
+                    'jumlah_art' => $faker->numberBetween(1, 10),
+                    'foto_rumah' => 'dummy_photo_path_' . uniqid() . '.jpg', // Placeholder
+                    'geotag_rumah' => [
+                        'latitude' => $faker->latitude,
+                        'longitude' => $faker->longitude,
+                        'accuracy' => $faker->numberBetween(5, 50),
+                        'timestamp' => now()->toISOString(),
+                    ],
+                ];
+                $assignmentResponseData['responses'] = json_encode($responses);
+
+                // Randomly set some to Submitted by PPL
+                if ($faker->boolean(70)) { // 70% chance to be submitted
+                    $assignmentResponseData['status'] = Constants::STATUS_SUBMITTED_PPL;
+                } else {
+                    $assignmentResponseData['status'] = Constants::STATUS_ASSIGNED;
+                }
+            } else {
+                $assignmentResponseData['status'] = Constants::STATUS_ASSIGNED;
+                $assignmentResponseData['responses'] = json_encode([]);
+            }
+
+            AssignmentResponse::create($assignmentResponseData);
 
             $pplIndex = ($pplIndex + 1) % $pplUsers->count();
             if ($pplIndex % 5 === 0) {

@@ -54,6 +54,7 @@ The engine must support the following types:
     -   **Schema:** `{"type": "roster", "id": "anggota_rumah_tangga", "item_label": "Anggota Rumah Tangga", "questions": [ ...nested questions... ]}`
     -   The `questions` array contains a full set of question definitions for a single roster item.
     -   Rosters can be nested within other rosters.
+-   **`dynamic_roster_add_button`**: A button that allows the PPL to add a new top-level roster item (e.g., a new family) to the current assignment. This is specifically for scenarios like Listing where new entities are discovered in the field.
 
 ## 3. Advanced Logic Engine
 
@@ -112,3 +113,19 @@ To provide a smooth user experience, inline validation messages (the error or wa
 To uniquely identify each question within a repeating roster, the validation engine will use a dot-notation path for question IDs. This path is constructed as `rosterId.index.questionId`.
 
 -   **Example:** For a roster with `id: "anggota_rumah_tangga"`, the `nama_art` question for the first person in the roster will have a validation ID of `anggota_rumah_tangga.0.nama_art`.
+
+### 5.5. PPL Final Visit Status
+(This feature is implemented as a question type within the form schema, typically a 'select' or 'radio' input.)
+
+The form must provide a mechanism for PPLs to record the final outcome of a visit, distinct from submission. This will typically be a select input or a set of radio buttons with predefined options (e.g., 'Selesai Dicacah', 'Responden Menolak', 'Keluarga Pindah', 'Rumah Kosong', 'Tidak Ditemukan').
+If a status other than 'Selesai Dicacah' is selected, the remaining questions in the form should be disabled, and an optional notes field may be required.
+
+### 5.6. PPL New Assignment Creation
+
+For "Listing" type activities, the PWA must provide a mechanism for PPLs to create new, top-level assignments (e.g., new families/households) directly from the field. This is for cases where new entities are discovered that were not part of the initial pre-list.
+
+-   **Trigger:** A dedicated UI element (e.g., a "Tambah Keluarga Baru" button) will be available, likely on the Assignment List Page or Activity Dashboard Page when viewing a Listing activity.
+-   **Data Collection:** A simplified form or modal will guide the PPL to collect essential initial data for the new assignment (e.g., family head name, address, geotag, photo). This data will be used to create the new `Assignment` and `Assignment Response` records.
+    -   **Prefilling Geographical Data:** If the new assignment is initiated from a specific geographical group context (e.g., from `AssignmentListPage` filtered by a `level_6_code`), the new assignment's `level_1_code` to `level_6_code` and their corresponding labels will be automatically prefilled based on that context.
+-   **Backend Integration:** The collected data will be sent to a specific API endpoint to create the new assignment in the backend.
+-   **Offline Support:** The new assignment will be created locally first and then queued for synchronization with the backend.

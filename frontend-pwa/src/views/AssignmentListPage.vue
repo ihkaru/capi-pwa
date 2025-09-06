@@ -29,6 +29,14 @@
         </table>
       </div>
     </f7-card>
+
+    <f7-block v-if="dashboardStore.activity?.allow_new_assignments_from_pwa && authStore.activeRole === 'PPL'">
+      <f7-button large fill @click="handleAddNewAssignment">
+        <f7-icon f7="plus"></f7-icon>
+        Tambah Assignment Baru
+      </f7-button>
+    </f7-block>
+
   </f7-page>
 </template>
 
@@ -37,8 +45,10 @@ import { computed } from 'vue';
 import { f7 } from 'framework7-vue';
 import { useDashboardStore } from '../js/stores/dashboardStore';
 import { useUiStore } from '../js/stores/uiStore';
+import { useAuthStore } from '../js/stores/authStore';
 import { Assignment } from '../js/services/offline/ActivityDB';
 import { getBackgroundColorForStatus } from '../js/utils/statusColors';
+import AddNewAssignmentModal from '../components/AddNewAssignmentModal.vue';
 
 const props = defineProps({
   f7route: Object,
@@ -46,6 +56,7 @@ const props = defineProps({
 
 const dashboardStore = useDashboardStore();
 const uiStore = useUiStore();
+const authStore = useAuthStore();
 
 const groupName = computed(() => {
   const rawGroupName = props.f7route?.params?.groupName || '';
@@ -82,6 +93,44 @@ function onPageAfterIn() {
   } else {
     console.log('AssignmentListPage: Not triggered by status change, skipping delta sync.');
   }
+}
+
+function handleAddNewAssignment() {
+  const currentActivity = dashboardStore.activity;
+  const currentGroup = dashboardStore.groupedAssignments[groupName.value];
+
+  if (!currentActivity || !currentGroup) {
+    f7.dialog.alert('Tidak dapat menambahkan penugasan baru: informasi kegiatan atau grup tidak lengkap.');
+    return;
+  }
+
+  // Extract geographical codes from the first assignment in the group
+  // Assuming all assignments in a group share the same geographical codes up to their grouping level
+  const firstAssignmentInGroup = currentGroup.assignments[0];
+  const prefilledGeoData = {
+    level_1_code: firstAssignmentInGroup?.level_1_code,
+    level_1_label: firstAssignmentInGroup?.level_1_label,
+    level_2_code: firstAssignmentInGroup?.level_2_code,
+    level_2_label: firstAssignmentInGroup?.level_2_label,
+    level_3_code: firstAssignmentInGroup?.level_3_code,
+    level_3_label: firstAssignmentInGroup?.level_3_label,
+    level_4_code: firstAssignmentInGroup?.level_4_code,
+    level_4_label: firstAssignmentInGroup?.level_4_label,
+    level_5_code: firstAssignmentInGroup?.level_5_code,
+    level_5_label: firstAssignmentInGroup?.level_5_label,
+    level_6_code: firstAssignmentInGroup?.level_6_code,
+    level_6_label: firstAssignmentInGroup?.level_6_label,
+    level_4_code_full: firstAssignmentInGroup?.level_4_code_full,
+    level_6_code_full: firstAssignmentInGroup?.level_6_code_full,
+  };
+
+  console.log('Prefilled Geographical Data for New Assignment:', prefilledGeoData);
+
+  f7.popup.open(AddNewAssignmentModal, {
+    props: {
+      prefilledGeoData: prefilledGeoData,
+    },
+  });
 }
 </script>
 

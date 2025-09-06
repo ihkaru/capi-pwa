@@ -118,8 +118,9 @@ The application is stable and the core data pipeline is robust.
 *   **PWA Features Working:** PWA-specific functionalities like the device camera (using a robust file-input fallback), geolocation, and an integrated photo viewer are now correctly configured and operational.
 *   **End-to-End Data Flow:** The full data pipeline from the backend (Laravel Seeder) -> API -> `dashboardStore` -> Dexie (local DB) -> `formStore` -> Vue Component is functioning correctly.
 *   **PML Review Workflow (Functional):** The core workflow for a PML to download, view, and interact with a PPL's submitted assignment is now functional. This includes correctly loading and displaying the PPL's data and locking/unlocking fields based on the user's role. Rejection notes are now optional for PMLs.
+*   **PPL Review of Submitted Assignments:** PPLs can now navigate through and review their submitted assignments in read-only mode, including data within rosters and nested structures. Form inputs and the submit button are correctly disabled/hidden for submitted assignments.
 *   **Automatic Delta Sync:** The application now automatically triggers a delta synchronization in the background when the user returns to the Assignment List Page, *but only if a status-changing action (Submit, Approve, Reject, Revert Approval) was performed on the Interview Form Page*, ensuring up-to-date assignment statuses.
-*   **Consistent Status Coloring:** Assignment statuses are now consistently colored across `AssignmentListPage.vue`, `ActivityDashboardPage.vue`, and `AssignmentGroupPage.vue` for improved visual clarity.
+*   **Consistent Status Coloring:** Assignment statuses are now consistently colored across `AssignmentListPage.vue`, `ActivityDashboardPage.vue`, and `AssignmentGroupPage.vue` for improved visual clarity. The 'Assigned' status badge is now 'yellow' for better distinction.
 
 ### **3. Overall Roadmap**
 
@@ -136,6 +137,12 @@ The high-level roadmap remains the same, with our focus still on the main CAPI f
 *   **Next Step:** Implement the PPL's repair cycle after an assignment is rejected by PML or Admin. This involves displaying rejection notes to the PPL and enabling them to edit and re-submit the assignment, as described in "Tahap 4: Siklus Perbaikan" of `alur-kerja.md`.
 
 ## Crucial Lessons Learned
+
+12. **Laravel Array Cast & JSON Serialization of Empty Objects:**
+    *   **Mistake:** The `responses` attribute (cast as `array`) was being serialized as an empty JSON array (`"[]"`) instead of an empty JSON object (`"{}"`) when empty, causing frontend data binding issues.
+    *   **Lesson:** When an `array` cast attribute is empty, Laravel's default JSON serialization converts it to `[]`. To ensure it serializes as `{}`, a custom accessor (`getResponsesAttribute`) was implemented in the `AssignmentResponse` model to always return an object, even if the underlying database value is `null` or `[]`.
+
+
 
 During the development of the Dynamic Form Engine, several crucial lessons were learned that highlight the importance of adhering to architectural principles and thoroughly understanding framework specifics:
 

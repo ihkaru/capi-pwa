@@ -122,6 +122,14 @@ class SyncEngine {
               item.payload.notes
             );
             break;
+          case 'createAssignment':
+            // Assuming payload contains { assignment, assignmentResponse, photo }
+            response = await apiClient.createAssignment(
+              item.payload.assignment,
+              item.payload.assignmentResponse,
+              item.payload.photo // Optional photo data
+            );
+            break;
 
           case 'uploadPhoto':
             // --- VALIDASI RUNTIME ---

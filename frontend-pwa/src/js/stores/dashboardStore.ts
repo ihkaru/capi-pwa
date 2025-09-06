@@ -194,6 +194,76 @@ export const useDashboardStore = defineStore('dashboard', () => {
     }
   }
 
+  async function createNewAssignment(data: any) {
+    if (!currentUserId.value || !activity.value) {
+      throw new Error('Cannot create new assignment: User not authenticated or activity not loaded.');
+    }
+
+    const newAssignmentId = crypto.randomUUID();
+    const now = new Date().toISOString();
+    const user = currentUserId.value;
+
+    // Construct the new Assignment object
+    const newAssignment: Assignment = {
+      id: newAssignmentId,
+      satker_id: authStore.user?.satker_id || null, // Assuming satker_id is available on authStore.user
+      kegiatan_statistik_id: activity.value.id,
+      ppl_id: user,
+      pml_id: activity.value.pml_id || null, // Assuming PML is assigned at activity level or can be null
+      // Prefilled geographical data
+      level_1_code: data.level_1_code || null,
+      level_1_label: data.level_1_label || null,
+      level_2_code: data.level_2_code || null,
+      level_2_label: data.level_2_label || null,
+      level_3_code: data.level_3_code || null,
+      level_3_label: data.level_3_label || null,
+      level_4_code: data.level_4_code || null,
+      level_4_label: data.level_4_label || null,
+      level_5_code: data.level_5_code || null,
+      level_5_label: data.level_5_label || null,
+      level_6_code: data.level_6_code || null,
+      level_6_label: data.level_6_label || null,
+      level_4_code_full: data.level_4_code_full || null,
+      level_6_code_full: data.level_6_code_full || null,
+      // Collected initial data
+      assignment_label: data.nama_krt, // Use KRT name as initial label
+      prefilled_data: { nama_krt: data.nama_krt, geotag: data.geotag, photo: data.photo }, // Store initial collected data here
+      created_at: now,
+      updated_at: now,
+      status: 'Assigned', // Initial status
+      user_id: user, // For Dexie indexing
+    };
+
+    // Construct the new AssignmentResponse object
+    const newAssignmentResponse = {
+      assignment_id: newAssignmentId,
+      user_id: user,
+      status: 'Assigned',
+      version: 1,
+      form_version_used: formSchema.value?.form_version || 1,
+      responses: {},
+      created_at: now,
+      updated_at: now,
+    };
+
+    await activityDB.transaction('rw', [activityDB.assignments, activityDB.assignmentResponses], async () => {
+      await activityDB.assignments.add(newAssignment);
+      await activityDB.assignmentResponses.add(newAssignmentResponse);
+    });
+
+    // Add to the current assignments list in the store
+    assignments.value.push(newAssignment);
+
+    // Queue for sync
+    await syncEngine.queueForSync('createAssignment', {
+      assignment: newAssignment,
+      assignmentResponse: newAssignmentResponse,
+      photo: data.photo, // Pass photo data for upload
+    });
+
+    console.log('New assignment created and queued for sync:', newAssignment);
+  }
+
   function reset() {
     isLoading.value = false;
     isSyncingInBackground.value = false;

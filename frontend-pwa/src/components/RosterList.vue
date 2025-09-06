@@ -35,7 +35,8 @@ const props = defineProps({
 const formStore = useFormStore();
 
 function openRosterItem(rosterQuestionId, index) {
-  f7.views.main.router.navigate(`/interview/${props.assignmentId}/roster/${rosterQuestionId}/${index}`);
+  const disabledParam = props.disabled ? '?disabled=true' : '';
+  f7.views.main.router.navigate(`/interview/${props.assignmentId}/roster/${rosterQuestionId}/${index}${disabledParam}`);
 }
 
 function addRosterItem(rosterQuestionId) {

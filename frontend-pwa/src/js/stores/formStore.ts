@@ -229,6 +229,8 @@ export const useFormStore = defineStore('form', () => {
 
             state.value.assignmentResponse = response;
             console.log(`[formStore] Final assignmentResponse state:`, JSON.parse(JSON.stringify(response)));
+            console.log(`[formStore] Current formSchema:`, JSON.parse(JSON.stringify(state.value.formSchema)));
+            console.log(`[formStore] Responses object for binding:`, JSON.parse(JSON.stringify(responses.value)));
 
             state.value.status = 'ready';
             console.log(`[formStore] Store is ready.`);
@@ -272,6 +274,7 @@ export const useFormStore = defineStore('form', () => {
         }
 
         const assignmentId = state.value.assignment.id;
+        console.log('[formStore] Responses before submission:', JSON.parse(JSON.stringify(state.value.assignmentResponse.responses)));
         const responsesCopy = JSON.parse(JSON.stringify(state.value.assignmentResponse.responses));
 
         const findQuestionsByType = (type: string) => {
@@ -324,10 +327,10 @@ export const useFormStore = defineStore('form', () => {
             console.log('[formStore] Type of responses BEFORE stringify:', typeof assignmentResponseToSend.responses);
             console.log('[formStore] Value of responses BEFORE stringify:', JSON.stringify(assignmentResponseToSend.responses, null, 2)); // Pretty print for readability
             
-            assignmentResponseToSend.responses = JSON.stringify(assignmentResponseToSend.responses);
+            // assignmentResponseToSend.responses = JSON.stringify(assignmentResponseToSend.responses);
             
             console.log('[formStore] Type of responses AFTER stringify:', typeof assignmentResponseToSend.responses);
-            console.log('[formStore] Value of responses AFTER stringify:', assignmentResponseToSend.responses);
+            console.log('[formStore] Value of responses AFTER stringify:', JSON.stringify(assignmentResponseToSend.responses, null, 2));
         } catch(e) {
             console.error('[formStore] CRITICAL: Failed to stringify responses object.', e);
             console.error('[formStore] Object that failed to stringify:', assignmentResponseToSend.responses);
