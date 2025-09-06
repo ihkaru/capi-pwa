@@ -2,6 +2,13 @@
   <f7-page @page:afterin="onPageAfterIn">
     <f7-navbar :title="formStore.state.assignment?.assignment_label || 'Memuat...'" back-link="Kembali"></f7-navbar>
 
+    <f7-block v-if="isRejectedByPmlOrAdmin && formStore.state.assignmentResponse?.notes" class="rejected-notes-block">
+      <f7-block-header>Catatan Penolakan</f7-block-header>
+      <f7-block-content>
+        <p>{{ formStore.state.assignmentResponse.notes }}</p>
+      </f7-block-content>
+    </f7-block>
+
     <!-- Main Action FAB -->
     <f7-fab position="right-bottom" slot="fixed">
       <f7-icon f7="plus"></f7-icon>
@@ -276,6 +283,11 @@ const visibleSummaryCategory = ref('');
 
 const isPmlMode = ref(false);
 const allowedActions = ref([]);
+
+const isRejectedByPmlOrAdmin = computed(() => {
+  const status = formStore.state.assignmentResponse?.status;
+  return status === 'Rejected by PML' || status === 'Rejected by Admin';
+});
 
 const validationSummary = computed(() => formStore.validationSummary);
 
@@ -569,6 +581,29 @@ function submitForm() {
 .loading-container,
 .error-container {
   padding: 32px 16px;
+}
+
+/* Rejected Notes Block */
+.rejected-notes-block {
+  margin: 16px;
+  padding: 16px;
+  background-color: #ffebee; /* Light red background */
+  border-left: 5px solid #ef5350; /* Red border */
+  border-radius: 4px;
+  color: #b71c1c; /* Dark red text */
+  font-weight: 500;
+}
+
+.rejected-notes-block .block-header {
+  font-size: 16px;
+  font-weight: 700;
+  margin-bottom: 8px;
+  color: #b71c1c;
+}
+
+.rejected-notes-block p {
+  margin-bottom: 0;
+  line-height: 1.5;
 }
 
 /* Page title styling */
