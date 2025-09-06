@@ -2,7 +2,7 @@ import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
 import { f7 } from 'framework7-vue';
 import { activityDB, Activity, Assignment, FormSchema, MasterSls } from '../services/offline/ActivityDB';
-import { useAuthStore } from './auth';
+import { useAuthStore } from './authStore';
 import apiClient from '../services/ApiClient';
 
 export const useDashboardStore = defineStore('dashboard', () => {
@@ -72,6 +72,17 @@ export const useDashboardStore = defineStore('dashboard', () => {
     try {
       const user = currentUserId.value;
       activity.value = await activityDB.activities.where({ id: activityId, user_id: user }).first() || null;
+      
+      // Set the active role in the auth store based on the activity context
+      if (activity.value?.user_role) {
+        authStore.setActiveRole(activity.value.user_role);
+        console.log(`[dashboardStore] Active role set to: ${activity.value.user_role}`);
+      } else {
+        // Clear the role if the activity doesn't define one (should not happen in normal flow)
+        authStore.setActiveRole(null);
+        console.warn(`[dashboardStore] No user_role found for activity ${activityId}. Active role cleared.`);
+      }
+
       formSchema.value = await activityDB.formSchemas.where({ activity_id: activityId, user_id: user }).first() || null;
       const allAssignments = await activityDB.assignments.where({ activity_id: activityId, user_id: user }).toArray();
       assignments.value = allAssignments;
@@ -125,11 +136,18 @@ export const useDashboardStore = defineStore('dashboard', () => {
         console.log(`LOG: [dashboardStore] syncFull: Mengambil semua data dari API...`);
         const initialData = await apiClient.getInitialData(activityId, false);
 
+        // --- BEGIN CRITICAL DEBUG LOG ---
+        console.log('[dashboardStore] Full initialData payload received from server:', JSON.stringify(initialData, null, 2));
+        // --- END CRITICAL DEBUG LOG ---
+
+        console.log('dashboardStore: Saving form schema to Dexie with activity_id:', activityId);
+        console.log('dashboardStore: Schema object being saved:', initialData.form_schema);
+
         await activityDB.transaction('rw', 
-          [activityDB.activities, activityDB.assignments, activityDB.formSchemas, activityDB.masterData, activityDB.masterSls],
+          [activityDB.activities, activityDB.assignments, activityDB.assignmentResponses, activityDB.formSchemas, activityDB.masterData, activityDB.masterSls],
           async () => {
             await activityDB.activities.put({ ...initialData.activity, user_id: user });
-            await activityDB.formSchemas.put({ ...initialData.form_schema, activity_id: activityId, user_id: user });
+            await activityDB.formSchemas.put({ activity_id: activityId, user_id: user, schema: initialData.form_schema });
             if (initialData.master_data?.length > 0) {
               const masterDataWithUserId = initialData.master_data.map(md => ({ ...md, activity_id: activityId, user_id: user }));
               await activityDB.masterData.bulkPut(masterDataWithUserId);
@@ -139,6 +157,13 @@ export const useDashboardStore = defineStore('dashboard', () => {
             }
             const assignmentsToStore = initialData.assignments.map(assign => ({ ...assign, activity_id: assign.kegiatan_statistik_id, user_id: user }));
             await activityDB.assignments.bulkPut(assignmentsToStore);
+
+            if (initialData.assignmentResponses && Array.isArray(initialData.assignmentResponses)) {
+              console.log(`[dashboardStore] Storing ${initialData.assignmentResponses.length} assignment responses from initial data.`);
+              await activityDB.assignmentResponses.bulkPut(initialData.assignmentResponses);
+            } else {
+              console.warn('[dashboardStore] No assignmentResponses found in initial data from server.');
+            }
           }
         );
 
@@ -169,6 +194,47 @@ export const useDashboardStore = defineStore('dashboard', () => {
     }
   }
 
+  function reset() {
+    isLoading.value = false;
+    isSyncingInBackground.value = false;
+    activity.value = null;
+    assignments.value = [];
+    formSchema.value = null;
+    masterSls.value = [];
+    authStore.setActiveRole(null); // Clear active role on reset
+    console.log('DashboardStore: Reset.');
+  }
+
+  async function hasUnsyncedData(): Promise<boolean> {
+    if (!currentUserId.value) {
+      console.log('Cannot check for unsynced data, no user ID found.');
+      return false; // No user, no data
+    }
+    try {
+      // Asumsi: status 'Assigned' adalah status awal dari server.
+      // Status lain ('Submitted by PPL', 'Approved by PML', dll.) 
+      // menunjukkan ada perubahan lokal yang mungkin belum sinkron.
+      const unsyncedCount = await activityDB.assignments
+        .where('user_id').equals(currentUserId.value)
+        .and(assignment => assignment.status !== 'Assigned' && assignment.status !== null && assignment.status !== undefined && assignment.status !== '')
+        .count();
+
+      if (unsyncedCount > 0) {
+        console.log(`Found ${unsyncedCount} unsynced assignments.`);
+        return true;
+      }
+      
+      // TODO: Di masa depan, ini bisa diperluas untuk memeriksa tabel lain
+      // seperti 'surveyResults' jika ada.
+
+      console.log('No unsynced data found.');
+      return false;
+    } catch (error) {
+      console.error('Error checking for unsynced data:', error);
+      return false; // Jika terjadi error, anggap tidak ada untuk mencegah user terjebak
+    }
+  }
+
   return {
     isLoading,
     isSyncingInBackground,
@@ -181,5 +247,7 @@ export const useDashboardStore = defineStore('dashboard', () => {
     loadDashboardData,
     syncDelta,
     syncFull,
+    reset,
+    hasUnsyncedData, // <-- Ekspor aksi baru
   };
 });

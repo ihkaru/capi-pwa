@@ -1,32 +1,43 @@
-// Impor komponen halaman Anda
+import { useAuthStore } from '@/js/stores/authStore';
 import HomePage from '@/views/HomePage.vue';
 import LoginPage from '@/views/LoginPage.vue';
 import InterviewFormPage from '@/views/InterviewFormPage.vue';
 import ActivityDashboardPage from '@/views/ActivityDashboardPage.vue';
 import AssignmentGroupPage from '@/views/AssignmentGroupPage.vue';
 import SyncDashboard from '@/views/SyncDashboard.vue';
-
-// Impor store Anda
-import { useAuthStore } from '@/js/stores/auth.ts'; // Selalu gunakan ekstensi file
 import AssignmentListPage from '@/views/AssignmentListPage.vue';
+import RosterItemPage from '@/views/RosterItemPage.vue';
 
-/**
- * Navigation guard untuk Framework7.
- * Memeriksa apakah pengguna sudah terotentikasi.
- */
-const authGuard = ({ resolve }) => {
+const waitForAuth = () => {
   const authStore = useAuthStore();
-  if (authStore.isAuthenticated) {
-    // 1. Jika pengguna terotentikasi, izinkan navigasi.
-    resolve();
-  } else {
-    // 2. Jika tidak, alihkan ke halaman login.
-    // Di F7, resolve() dengan path akan melakukan redirect.
-    resolve({ path: '/', name: 'Login' });
+  if (authStore.isInitialized) {
+    return Promise.resolve();
   }
+
+  return new Promise(resolve => {
+    const unsubscribe = authStore.$subscribe((mutation, state) => {
+      if (state.isInitialized) {
+        unsubscribe();
+        resolve();
+      }
+    });
+  });
 };
 
-// --- Definisi Rute Aplikasi untuk Framework7 ---
+const createAuthRoute = (component) => {
+  return {
+    async: async ({ resolve }) => {
+      await waitForAuth();
+      const authStore = useAuthStore();
+      if (authStore.isAuthenticated) {
+        resolve({ component });
+      } else {
+        resolve({ path: '/', name: 'Login' });
+      }
+    },
+  };
+};
+
 const routes = [
   {
     path: '/',
@@ -34,40 +45,39 @@ const routes = [
     component: LoginPage,
   },
   {
-    path: '/home/', // Framework7 sering menggunakan trailing slash
+    path: '/home/',
     name: 'Home',
-    component: HomePage,
-    beforeEnter: authGuard,
+    ...createAuthRoute(HomePage),
   },
   {
-    path: '/interview/:interviewId/',
+    path: '/assignment/:assignmentId/',
     name: 'InterviewForm',
-    component: InterviewFormPage,
-    beforeEnter: authGuard,
+    ...createAuthRoute(InterviewFormPage),
   },
   {
     path: '/activity/:activityId/dashboard',
     name: 'ActivityDashboard',
-    component: ActivityDashboardPage,
-    beforeEnter: authGuard,
+    ...createAuthRoute(ActivityDashboardPage),
   },
   {
     path: '/activity/:activityId/groups/',
     name: 'AssignmentGroups',
-    component: AssignmentGroupPage,
-    beforeEnter: authGuard,
+    ...createAuthRoute(AssignmentGroupPage),
   },
   {
     path: '/activity/:activityId/group/:groupName/',
     name: 'AssignmentList',
-    component: AssignmentListPage,
-    beforeEnter: authGuard,
+    ...createAuthRoute(AssignmentListPage),
   },
   {
     path: '/sync-dashboard/',
     name: 'SyncDashboard',
-    component: SyncDashboard,
-    beforeEnter: authGuard,
+    ...createAuthRoute(SyncDashboard),
+  },
+  {
+    path: '/interview/:assignmentId/roster/:rosterQuestionId/:index',
+    name: 'RosterItem',
+    ...createAuthRoute(RosterItemPage),
   },
 ];
 

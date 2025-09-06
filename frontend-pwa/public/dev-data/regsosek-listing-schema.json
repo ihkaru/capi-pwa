@@ -1,0 +1,85 @@
+
+{
+    "form_name": "REGSOSEK 2022 - LISTING",
+    "form_version": 1,
+    "masters_used": [],
+    "level_definitions": {
+        "level_1_code": "Provinsi",
+        "level_2_code": "Kabupaten/Kota",
+        "level_3_code": "Kecamatan",
+        "level_4_code": "Desa/Kelurahan",
+        "level_5_code": "SLS"
+    },
+    "assignment_table_grouping_levels": [
+        "level_3_code",
+        "level_4_code"
+    ],
+    "assignment_table_columns": [
+        { "key": "nama_krt", "label": "Nama KRT" },
+        { "key": "status", "label": "Status" }
+    ],
+    "pages": [
+        {
+            "title": "Blok I: Identitas Keluarga",
+            "questions": [
+                {
+                    "id": "nama_krt",
+                    "type": "text",
+                    "label": "1. Nama Kepala Keluarga",
+                    "placeholder": "Masukkan nama kepala keluarga",
+                    "validation": {
+                        "required": true,
+                        "minLength": 3
+                    },
+                    "editableBy": ["PPL", "PML"]
+                },
+                {
+                    "id": "alamat",
+                    "type": "textarea",
+                    "label": "2. Alamat Lengkap",
+                    "placeholder": "Masukkan alamat lengkap RT/RW, jalan, nomor rumah",
+                    "validation": {
+                        "required": true
+                    },
+                    "editableBy": ["PPL", "PML"]
+                },
+                {
+                    "id": "jumlah_art",
+                    "type": "number",
+                    "label": "3. Jumlah Anggota Keluarga",
+                    "placeholder": "Masukkan jumlah anggota keluarga",
+                    "validation": {
+                        "required": true,
+                        "min": 1
+                    },
+                    "editableBy": ["PPL", "PML"]
+                }
+            ]
+        },
+        {
+            "title": "Blok II: Verifikasi Lapangan",
+            "questions": [
+                {
+                    "id": "foto_rumah",
+                    "type": "image",
+                    "label": "4. Foto Depan Rumah",
+                    "source": ["camera", "gallery"],
+                    "validation": {
+                        "required": true
+                    },
+                    "editableBy": ["PPL"]
+                },
+                {
+                    "id": "geotag_rumah",
+                    "type": "geotag",
+                    "label": "5. Geotag Lokasi Rumah",
+                    "min_accuracy": 25,
+                    "validation": {
+                        "required": true
+                    },
+                    "editableBy": ["PPL"]
+                }
+            ]
+        }
+    ]
+}

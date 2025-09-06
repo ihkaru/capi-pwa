@@ -23,4 +23,6 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/activities', [App\Http\Controllers\ActivityController::class, 'index']);
     Route::get('/activities/{activityId}/initial-data', [App\Http\Controllers\ActivityController::class, 'getInitialData']);
     Route::get('/activities/{activityId}/updates', [App\Http\Controllers\ActivityController::class, 'getUpdates']); // RUTE BARU
+    Route::post('/activities/{activityId}/assignments', [App\Http\Controllers\ActivityController::class, 'submitAssignments']); // RUTE BARU
+    Route::post('/assignments/{assignmentId}/photos', [App\Http\Controllers\AssignmentPhotoController::class, 'upload']); // RUTE BARU
 });

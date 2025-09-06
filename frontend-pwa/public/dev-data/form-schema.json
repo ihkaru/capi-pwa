@@ -1,0 +1,127 @@
+{
+  "form_name": "REGSOSEK 2022 - PENDATAAN",
+  "form_version": 1,
+  "masters_used": [
+    { "type": "WILAYAH_INDONESIA", "version": 1 },
+    { "type": "KODE_PEKERJAAN", "version": 1 }
+  ],
+  "level_definitions": {
+    "level_1_code": "Provinsi",
+    "level_2_code": "Kabupaten/Kota",
+    "level_3_code": "Kecamatan",
+    "level_4_code": "Desa/Kelurahan",
+    "level_5_code": "SLS",
+    "level_6_code": "Sub-SLS"
+  },
+  "assignment_table_grouping_levels": [
+    "level_5_code",
+    "level_4_code"
+  ],
+  "assignment_table_columns": [
+    { "key": "prefilled.nama_krt", "label": "Kepala Rumah Tangga" },
+    { "key": "prefilled.alamat", "label": "Alamat" },
+    { "key": "status", "label": "Status Terakhir" }
+  ],
+  "pages": [
+    {
+      "id": "page_1",
+      "title": "Verifikasi Data Prelist",
+      "sections": [
+        {
+          "id": "verifikasi_section",
+          "title": "Data dari Listing",
+          "questions": [
+            {
+              "id": "prefilled_nama_krt",
+              "type": "prefilled_display",
+              "label": "Nama Kepala Keluarga (dari Listing)",
+              "data_key": "nama_krt"
+            },
+            {
+              "id": "prefilled_alamat",
+              "type": "prefilled_display",
+              "label": "Alamat (dari Listing)",
+              "data_key": "alamat"
+            },
+            {
+              "id": "verifikasi_krt",
+              "type": "text",
+              "label": "Nama Kepala Keluarga (hasil verifikasi)",
+              "placeholder": "Masukkan nama KRT sesuai KTP",
+              "validation": { "required": true, "minLength": 3 },
+              "editableBy": ["PPL"]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "page_2",
+      "title": "Kependudukan & Demografi",
+      "sections": [
+        {
+          "id": "demografi_section",
+          "title": "Anggota Rumah Tangga",
+          "questions": [
+            {
+              "id": "jumlah_art",
+              "type": "number",
+              "label": "Jumlah Anggota Rumah Tangga",
+              "placeholder": "Masukkan jumlah ART",
+              "validation": { "required": true, "min": 1 },
+              "editableBy": ["PPL"]
+            },
+            {
+              "id": "ada_balita",
+              "type": "select",
+              "label": "Apakah ada balita (0-5 tahun)?",
+              "options": [
+                { "label": "Ya", "value": "ya" },
+                { "label": "Tidak", "value": "tidak" }
+              ],
+              "validation": { "required": true },
+              "editableBy": ["PPL", "PML"]
+            },
+            {
+              "id": "nama_balita",
+              "type": "text",
+              "label": "Sebutkan nama balita",
+              "placeholder": "Masukkan nama balita",
+              "validation": { "required": true },
+              "editableBy": ["PPL"],
+              "conditionalLogic": {
+                "showIf": { "ada_balita": "ya" }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "page_3",
+      "title": "Bukti Kunjungan",
+      "sections": [
+        {
+          "id": "bukti_section",
+          "title": "Geotag & Foto",
+          "questions": [
+            {
+              "id": "geotag_rumah",
+              "type": "geotag",
+              "label": "Koordinat Geotag Rumah",
+              "validation": { "required": true },
+              "editableBy": ["PPL"]
+            },
+            {
+              "id": "foto_rumah",
+              "type": "photo",
+              "label": "Foto Depan Rumah",
+              "validation": { "required": true },
+              "editableBy": ["PPL"]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

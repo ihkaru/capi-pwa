@@ -47,31 +47,26 @@
   </f7-app>
 </template>
 <script setup>
-  import { ref, onMounted } from 'vue';
+  import { onMounted } from 'vue';
   import { f7, f7ready } from 'framework7-vue';
-  import { useAuthStore } from '../js/stores/auth';
-
-  import { getDevice }  from 'framework7/lite-bundle';
+  import { getDevice } from 'framework7/lite-bundle';
   import capacitorApp from '../js/capacitor-app.js';
   import routes from '../js/routes.js';
-  import store from '../js/store';
 
   const device = getDevice();
-  const authStore = useAuthStore();
-  const initialUrl = ref(authStore.isAuthenticated ? '/home/' : '/');
+
+  // The initial URL is always the root.
+  // The authGuard in routes.ts will handle redirecting to /home/ if the user is authenticated.
+  const initialUrl = '/';
 
   // Framework7 Parameters
   const f7params = {
     name: 'Cerdas Mobile', // App name
     theme: 'auto', // Automatic theme detection
-
-    // App store
-    store: store,
-    // App routes
-    routes: routes,
+    routes: routes, // App routes
 
     // Register service worker (only on production build)
-    serviceWorker: process.env.NODE_ENV ==='production' ? {
+    serviceWorker: process.env.NODE_ENV === 'production' ? {
       path: '/service-worker.js',
     } : {},
     // Input settings
@@ -85,10 +80,9 @@
       androidOverlaysWebView: false,
     },
   };
-  
+
   onMounted(() => {
     f7ready(() => {
-
       // Init capacitor APIs (see capacitor-app.js)
       if (device.capacitor) {
         capacitorApp.init(f7);

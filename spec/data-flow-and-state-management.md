@@ -62,8 +62,14 @@ Berikut adalah alur data langkah demi langkah dari login hingga melihat detail p
     2.  **API Server** (untuk sinkronisasi).
 - **Data Kunci yang Diteruskan:** **`activityId`** yang sama diteruskan lagi ke halaman berikutnya.
 
-**Langkah 4: `AssignmentGroupPage` (dan halaman detail lainnya)**
-- **Pemicu:** Pengguna mengklik tombol "Lihat Detail Per Wilayah".
-- **Interaksi Store:** Tidak ada `action` yang dipanggil. Komponen ini hanya **membaca state** dari `dashboardStore`.
-- **Sumber Data:** **Hanya dari State `dashboardStore`** yang sudah diisi oleh halaman sebelumnya. Tidak ada interaksi jaringan atau database lokal di sini (kecuali halaman di-refresh).
+**Langkah 4: `AssignmentGroupPage`**
+- **Pemicu:** Pengguna mengklik tombol "Lihat Detail Per Wilayah" di `ActivityDashboardPage`.
+- **Interaksi Store:** Tidak ada `action` yang dipanggil. Komponen ini hanya **membaca state** dari `dashboardStore` untuk menampilkan daftar grup penugasan (misal: per kecamatan atau per desa).
+- **Sumber Data:** **Hanya dari State `dashboardStore`** yang sudah diisi oleh halaman sebelumnya.
+- **Data Kunci yang Diteruskan:** Pengguna memilih sebuah grup, dan **`groupName`** dari grup tersebut diteruskan ke halaman berikutnya melalui URL.
+
+**Langkah 5: `AssignmentListPage` (dan halaman detail lainnya)**
+- **Pemicu:** Pengguna mengklik salah satu grup di `AssignmentGroupPage`.
+- **Interaksi Store:** Tidak ada `action` yang dipanggil. Komponen ini hanya **membaca state** dari `dashboardStore` menggunakan `groupName` yang diterima untuk menampilkan daftar penugasan dalam grup tersebut.
+- **Sumber Data:** **Hanya dari State `dashboardStore`**. Sama seperti langkah sebelumnya, halaman ini sangat cepat karena tidak ada interaksi jaringan atau database.
 - **Data Kunci:** Tidak ada data kunci baru, karena semua data yang relevan sudah ada di `dashboardStore`.

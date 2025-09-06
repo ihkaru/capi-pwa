@@ -65,7 +65,8 @@ function getStatusColor(status: string): string {
 }
 
 function handleOpenAssignment(assignmentId: string) {
-  f7.views.main.router.navigate(`/interview/${assignmentId}/`);
+  console.log('AssignmentListPage: Navigating to assignment with ID:', assignmentId);
+  f7.views.main.router.navigate(`/assignment/${assignmentId}/`);
 }
 </script>
 

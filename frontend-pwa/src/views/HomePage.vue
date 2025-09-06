@@ -1,5 +1,5 @@
 <template>
-  <f7-page>
+  <f7-page @page:beforein="onPageBeforeIn">
     <f7-navbar title="Beranda">
       <!-- Slot "after-inner" akan menempatkan progress bar di bawah judul navbar -->
       <template #after-inner>
@@ -7,12 +7,6 @@
         <f7-progressbar v-if="isLoading" infinite class="position-absolute" />
       </template>
       <f7-nav-right>
-                  <f7-link @click="activityStore.syncActivities">
-            <ArrowCounterclockwise />
-          </f7-link>
-          <f7-link @click="activityStore.fullSyncActivities">
-            <ArrowCounterclockwise />
-          </f7-link>
         <f7-link @click="handleLogout">
           <ArrowRightSquare />
         </f7-link>
@@ -46,12 +40,11 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, watch } from 'vue';
 import { f7 } from 'framework7-vue';
 import { storeToRefs } from 'pinia';
-import { useAuthStore } from '../js/stores/auth';
+import { useAuthStore } from '../js/stores/authStore';
 import { useActivityStore } from '../js/stores/activityStore';
-import { ArrowRightSquare, ArrowCounterclockwise } from 'framework7-icons/vue';
+import { ArrowRightSquare } from 'framework7-icons/vue';
 
 const authStore = useAuthStore();
 const activityStore = useActivityStore();
@@ -59,27 +52,27 @@ const activityStore = useActivityStore();
 // Make state and getters reactive
 const { activities, isLoading } = storeToRefs(activityStore);
 
-onMounted(() => {
-  // If user is already logged in, fetch activities.
-  // Otherwise, watch for the user object to become available.
-  if (authStore.user?.id) {
-    activityStore.fetchActivities();
-  } else {
-    const unwatch = watch(() => authStore.user, (newUser) => {
-      if (newUser?.id) {
-        activityStore.fetchActivities();
-        unwatch(); // Stop watching once the user is available
-      }
-    });
-  }
-});
+const onPageBeforeIn = () => {
+  // Panggil fetchActivities untuk memastikan data selalu segar
+  // saat pengguna kembali ke halaman ini.
+  console.log('HomePage: page:beforein event triggered. Fetching activities.');
+  activityStore.fetchActivities();
+}
 
 async function handleLogout() {
-  authStore.logout();
-  f7.views.main.router.navigate('/', { clearCurrentView: true, reloadAll: true });
+  console.log('[HomePage] handleLogout: Initiating logout...');
+  const didLogout = await authStore.logout();
+  console.log('[HomePage] handleLogout: Logout process finished. Result:', didLogout);
+  if (didLogout) {
+    console.log('[HomePage] handleLogout: Navigating to /');
+    f7.views.main.router.navigate('/', { clearPreviousHistory: true });
+  } else {
+    console.log('[HomePage] handleLogout: Navigation skipped because logout was cancelled.');
+  }
 }
 
 function handleActivityClick(activityId) {
+  console.log(`HomePage: Activity clicked, navigating to dashboard for activity ID: ${activityId}`);
   // Navigate to the dashboard for the selected activity
   f7.views.main.router.navigate(`/activity/${activityId}/dashboard`);
 }
@@ -97,3 +90,12 @@ function getStatusChipColor(status) {
   return 'gray';
 }
 </script>
+
+<style scoped>
+.position-absolute {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+}
+</style>

@@ -1,5 +1,5 @@
 import axios, { AxiosInstance, AxiosRequestConfig, AxiosResponse } from 'axios';
-import { useAuthStore } from '@/js/stores/auth';
+import { useAuthStore } from '@/js/stores/authStore';
 import { f7 } from 'framework7-vue'; // Import f7
 
 // Placeholder types
@@ -54,9 +54,12 @@ interface MasterData {
 }
 
 interface InitialActivityPayload {
-  assignments: AssignmentResponse[];
-  form_schema: FormSchema; // Use FormSchema interface
-  master_data: MasterData[]; // Use MasterData interface
+  activity: Activity;
+  assignments: Assignment[];
+  assignmentResponses: AssignmentResponse[];
+  form_schema: FormSchema;
+  master_data: MasterData[];
+  master_sls: any[]; // Define more specifically if needed
 }
 
 interface ServerUpdatePayload {
@@ -192,6 +195,11 @@ class ApiClient {
     this.failedQueue = [];
   }
 
+  public async get(url: string, config?: AxiosRequestConfig): Promise<any> {
+    console.log(`ApiClient: Making GET request to: ${url}`);
+    return this.axiosInstance.get(url, config);
+  }
+
   /**
    * Authenticates the user.
    * @param {LoginCredentials} credentials - The user's login credentials.
@@ -248,8 +256,24 @@ class ApiClient {
       // Ensure the data structure matches AuthResponse
       if (response.data && response.data.access_token && response.data.user) {
         const { access_token, refresh_token, user } = response.data; // Assuming backend returns these
+
+        // --- BEGIN DEBUG LOG ---
+        console.log('[ApiClient] User object received from backend:', JSON.stringify(user, null, 2));
+        // --- END DEBUG LOG ---
+
+        // FIX: Extract role from nested object if it exists.
+        // The backend sends the role inside a `roles` array (e.g., user.roles[0].name)
+        const userForStore = { ...user };
+        if (user.roles && Array.isArray(user.roles) && user.roles.length > 0) {
+          userForStore.role = user.roles[0].name;
+          console.log(`[ApiClient] Extracted role '${userForStore.role}' from user object.`);
+        } else {
+          console.warn('[ApiClient] Could not find role in user.roles array. Using role from root if available, or undefined.');
+          userForStore.role = user.role; // Fallback to root property
+        }
+
         const authStore = useAuthStore(); // Get store instance inside the method
-        authStore.setAuthState(access_token,response.data.user);
+        authStore.setAuthState(access_token, userForStore);
         if (refresh_token) {
           localStorage.setItem('refreshToken', refresh_token);
         }
@@ -272,20 +296,14 @@ class ApiClient {
    * @param {boolean} showLoading - Whether to show a loading preloader.
    * @returns {Promise<void>}
    */
-  public async logout(showLoading = true): Promise<void> {
-    if (showLoading) {
-      f7.dialog.preloader('Logout...');
-    }
+  public async logout(): Promise<void> {
     try {
-      const authStore = useAuthStore(); // Get store instance
-      authStore.logout(); // Clear token and user from store and localStorage
-      localStorage.removeItem('refreshToken'); // Clear refresh token
-      // Depending on backend implementation, this might need to call a logout endpoint
-      // await this.axiosInstance.post('/logout'); // Uncomment if there's a backend logout endpoint
-    } finally {
-      if (showLoading) {
-        f7.dialog.close();
-      }
+      await this.axiosInstance.post('/logout');
+    } catch (error) {
+      // Bahkan jika logout dari server gagal (misal: token sudah tidak valid),
+      // kita tetap ingin melanjutkan proses logout di sisi klien.
+      // Jadi kita tangkap error di sini dan log, tapi tidak melemparnya lagi.
+      console.error('API call to /logout failed, proceeding with client-side logout anyway:', error);
     }
   }
 
@@ -422,6 +440,43 @@ class ApiClient {
     notes?: string
   ): Promise<void> {
     return this.axiosInstance.post(`/assignments/${assignmentId}/status`, { status, notes });
+  }
+
+  public async uploadPhoto(assignmentId: string, photo: File): Promise<FileUploadResponse> {
+    const formData = new FormData();
+    formData.append('photo', photo);
+
+    // Log FormData contents for debugging
+    for (let pair of formData.entries()) {
+      console.log(`[ApiClient] FormData entry: ${pair[0]}, ${pair[1]}`);
+    }
+
+    return this.axiosInstance.post(
+      `/assignments/${assignmentId}/photos`,
+      formData,
+      {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      }
+    );
+  }
+
+  /**
+   * Checks with the server what actions are currently allowed for a specific assignment.
+   * Crucial for the PML's Approve/Reject buttons. Requires an online connection.
+   * @param {string} assignmentId - The ID of the assignment to check.
+   * @returns {Promise<string[]>} An array of strings, e.g., ['APPROVE', 'REJECT'].
+   */
+  public async getAllowedActions(assignmentId: string): Promise<string[]> {
+    try {
+      const response: string[] = await this.axiosInstance.get(`/assignments/${assignmentId}/allowed-actions`);
+      return response; // Interceptor handles .data extraction
+    } catch (error) {
+      console.error(`Error fetching allowed actions for assignment ${assignmentId}:`, error);
+      // Return empty array on failure so the UI doesn't show buttons.
+      return [];
+    }
   }
 
   /**

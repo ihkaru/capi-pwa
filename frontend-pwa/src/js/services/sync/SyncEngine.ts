@@ -1,6 +1,7 @@
 import { activityDB, SyncQueueItem } from '../offline/ActivityDB';
 import apiClient from '../ApiClient';
 import { f7 } from 'framework7-vue';
+import { useAuthStore } from '@/js/stores/authStore';
 
 const SYNC_INTERVAL = 1000 * 60; // 1 minute
 const MAX_RETRIES = 3;
@@ -37,8 +38,13 @@ class SyncEngine {
   }
 
   public async queueForSync(type: SyncQueueItem['type'], payload: any) {
+    const authStore = useAuthStore();
+    if (!authStore.user?.id) {
+      console.error('SyncEngine: Cannot queue item, user is not authenticated.');
+      return;
+    }
     const item: SyncQueueItem = {
-      user_id,
+      user_id: authStore.user.id,
       type,
       payload,
       timestamp: new Date().toISOString(),
@@ -136,18 +142,28 @@ class SyncEngine {
         await activityDB.syncQueue.delete(item.id!); // Remove from queue on success
       } catch (error: any) {
         console.error(`SyncEngine: Failed to sync ${item.type} (ID: ${item.id}):`, error);
-        const retries = (item.retries || 0) + 1;
-        let status: SyncQueueItem['status'] = 'failed';
-        if (retries <= MAX_RETRIES) {
-          status = 'pending'; // Re-queue for retry
+
+        // Handle 409 Conflict specifically
+        if (error.response && error.response.status === 409) {
+          f7.dialog.alert(
+            'Tugas ini telah diperbarui di server oleh perangkat lain. Perubahan lokal Anda tidak dapat dikirim. Mohon cadangkan data penting secara manual (misalnya, dengan tangkapan layar), lalu lakukan \'Sync Perubahan\' untuk mendapatkan versi terbaru dari server.',
+            'Konflik Sinkronisasi'
+          );
+          await activityDB.syncQueue.delete(item.id!); // Delete from queue, no retry
+        } else {
+          const retries = (item.retries || 0) + 1;
+          let status: SyncQueueItem['status'] = 'failed';
+          if (retries <= MAX_RETRIES) {
+            status = 'pending'; // Re-queue for retry
+          }
+          await activityDB.syncQueue.update(item.id!, { status, retries, error: error.message });
+          f7.toast.show({
+            text: `Gagal sinkronisasi ${item.type}: ${error.message || 'Terjadi kesalahan.'}`,
+            position: 'bottom',
+            closeTimeout: 5000,
+            cssClass: 'error-toast',
+          });
         }
-        await activityDB.syncQueue.update(item.id!, { status, retries, error: error.message });
-        f7.toast.show({
-          text: `Gagal sinkronisasi ${item.type}: ${error.message || 'Terjadi kesalahan.'}`,
-          position: 'bottom',
-          closeTimeout: 5000,
-          cssClass: 'error-toast',
-        });
       }
     }
     this.isProcessing = false;

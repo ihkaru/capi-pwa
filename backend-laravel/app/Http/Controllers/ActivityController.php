@@ -8,7 +8,10 @@ use Carbon\Carbon;
 use App\Models\KegiatanStatistik; // Import KegiatanStatistik
 use App\Models\Assignment; // Import Assignment
 use App\Models\MasterData; // Import MasterData
+use App\Models\AssignmentResponse;
 use Illuminate\Support\Facades\Log; // Import Log facade
+use Illuminate\Support\Facades\DB; // Import DB facade
+use Illuminate\Support\Facades\Validator;
 
 class ActivityController extends Controller
 {
@@ -70,12 +73,25 @@ class ActivityController extends Controller
         });
 
         // 3. Fetch AssignmentResponses for the assignments
-        // TIDAK PERLU LAGI, KARENA STATUS SUDAH DI-EMBED
-        // $assignmentIds = $assignments->pluck('id');
-        // $assignmentResponses = \App\Models\AssignmentResponse::whereIn('assignment_id', $assignmentIds)->get();
+        $assignmentIds = $assignments->pluck('id');
+        $assignmentResponses = \App\Models\AssignmentResponse::whereIn('assignment_id', $assignmentIds)->get();
 
         // 4. Get Form Schema
-        $formSchema = $kegiatanStatistik->form_schema;
+        // Force decode, as the model cast seems to be behaving unexpectedly.
+                // 4. Get Form Schema directly from DB to ensure correct JSON decoding
+        $schemaString = DB::table('kegiatan_statistiks')->where('id', $activityId)->value('form_schema');
+        $formSchema = json_decode($schemaString, true);
+
+        // Add detailed logging for the schema
+        $logData = [];
+        if (is_array($formSchema)) {
+            $logData['pages_count'] = isset($formSchema['pages']) ? count($formSchema['pages']) : 0;
+            $logData['schema_keys'] = array_keys($formSchema);
+        } else {
+            $logData['schema_type'] = gettype($formSchema);
+            $logData['schema_content_preview'] = substr(is_string($formSchema) ? $formSchema : '', 0, 100);
+        }
+        Log::info('ActivityController@getInitialData: Form schema for activity ' . $activityId, $logData);
 
         // 5. Fetch Master SLS data relevant to the assignments
         $slsCodes = $assignments->pluck('level_6_code_full')->filter()->unique();
@@ -105,7 +121,7 @@ class ActivityController extends Controller
             'data' => [
                 'activity' => new KegiatanStatistikResource($kegiatanStatistik), 
                 'assignments' => $assignments, // assignments sekarang sudah punya status
-                // 'assignmentResponses' => $assignmentResponses, // Tidak perlu dikirim lagi
+                'assignmentResponses' => $assignmentResponses,
                 'master_sls' => $masterSls, 
                 'form_schema' => $formSchema,
                 'master_data' => $masterData,
@@ -123,6 +139,57 @@ class ActivityController extends Controller
                 'assignmentResponses' => [],
             ]
         ]);
+    }
+
+    public function submitAssignments(Request $request, $activityId)
+    {
+        $user = $request->user();
+
+        $validator = Validator::make($request->all(), [
+            '*.assignment_id' => 'required|string|exists:assignments,id',
+            '*.status' => 'required|string',
+            '*.responses' => 'required|json',
+            '*.version' => 'required|integer',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json($validator->errors(), 422);
+        }
+
+        $validatedData = $validator->validated();
+
+        DB::beginTransaction();
+        try {
+            foreach ($validatedData as $responseData) {
+                $assignmentResponse = AssignmentResponse::where('assignment_id', $responseData['assignment_id'])->firstOrFail();
+
+                // Authorization check: Ensure the user is the assigned PPL for this assignment
+                if ($assignmentResponse->assignment->ppl_id !== $user->id) {
+                    DB::rollBack();
+                    return response()->json(['message' => 'Unauthorized to submit this assignment.'], 403);
+                }
+
+                // Optimistic locking check
+                if ($assignmentResponse->version != $responseData['version']) {
+                    DB::rollBack();
+                    return response()->json(['message' => 'Conflict: Data has been updated since last sync.'], 409);
+                }
+
+                $assignmentResponse->status = $responseData['status'];
+                $assignmentResponse->responses = $responseData['responses'];
+                $assignmentResponse->version += 1;
+                $assignmentResponse->submitted_by_ppl_at = now();
+                $assignmentResponse->save();
+            }
+
+            DB::commit();
+
+            return response()->json(['success' => true, 'message' => 'Assignments submitted successfully.']);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('Error submitting assignments: ' . $e->getMessage());
+            return response()->json(['message' => 'An error occurred during submission.'], 500);
+        }
     }
 }
 

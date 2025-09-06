@@ -1,409 +1,742 @@
-
 <template>
-  <f7-page>
-    <f7-navbar :title="assignment ? `Wawancara ${assignment.assignment_label}` : 'Memuat Wawancara...'" back-link="Kembali"></f7-navbar>
+  <f7-page @page:afterin="onPageAfterIn">
+    <f7-navbar :title="formStore.state.assignment?.assignment_label || 'Memuat...'" back-link="Kembali"></f7-navbar>
 
-    <template v-if="!assignment || !formSchema || !assignmentResponse">
-      <f7-block-title>Memuat Data...</f7-block-title>
-      <f7-block>
-        <p>Sedang memuat data penugasan dan formulir. Mohon tunggu.</p>
-        <f7-preloader></f7-preloader>
-      </f7-block>
-    </template>
+    <!-- Main Action FAB -->
+    <f7-fab position="right-bottom" slot="fixed">
+      <f7-icon f7="plus"></f7-icon>
+      <f7-icon f7="xmark"></f7-icon>
+      <f7-fab-buttons position="top">
+        <f7-fab-button label="Ringkasan Validasi" @click="summaryPopupOpened = true">
+          <f7-icon f7="exclamationmark_triangle_fill"></f7-icon>
+        </f7-fab-button>
+        <f7-fab-button v-if="!isPmlMode" label="Submit" @click="submitForm" :disabled="isFormLocked">
+          <f7-icon f7="paperplane_fill"></f7-icon>
+        </f7-fab-button>
+        <f7-fab-button v-if="isPmlMode && allowedActions.includes('APPROVE')" label="Approve"
+          @click="() => handlePmlAction('approve')">
+          <f7-icon f7="checkmark"></f7-icon>
+        </f7-fab-button>
+        <f7-fab-button v-if="isPmlMode && allowedActions.includes('REJECT')" label="Reject" color="red"
+          @click="() => handlePmlAction('reject')">
+          <f7-icon f7="xmark"></f7-icon>
+        </f7-fab-button>
+      </f7-fab-buttons>
+    </f7-fab>
 
-    <template v-else>
-      <f7-block-title>Detail Penugasan</f7-block-title>
-      <f7-list>
-        <f7-list-item title="Label Penugasan" :after="assignment.assignment_label"></f7-list-item>
-        <f7-list-item title="Status">
-          <template #after>
-            <f7-chip :text="assignmentResponse.status" :color="getStatusChipColor(assignmentResponse.status)" />
+    <!-- Summary Popup -->
+    <f7-popup :opened="summaryPopupOpened" @popup:closed="summaryPopupOpened = false">
+      <f7-page>
+        <f7-navbar title="Ringkasan Validasi">
+          <template #right>
+            <f7-link popup-close>Close</f7-link>
           </template>
-        </f7-list-item>
-        <f7-list-item title="Versi Data Tersimpan" :after="`v${assignmentResponse.version}`"></f7-list-item>
-      </f7-list>
+        </f7-navbar>
+        <div class="list simple-list" v-if="validationSummary">
+          <ul>
+            <li>
+              <span>Terjawab</span>
+              <span class="badge color-green">{{ validationSummary.answeredCount }}</span>
+            </li>
+            <li @click="() => { if (formStore.validationSummary.errorCount > 0) openSummarySheet('errors'); }"
+              class="item-link" :class="{ disabled: validationSummary.errorCount === 0 }">
+              <div class="item-content">
+                <div class="item-inner">
+                  <div class="item-title">Error</div>
+                  <div class="item-after"><span class="badge color-red">{{ validationSummary.errorCount }}</span></div>
+                </div>
+              </div>
+            </li>
+            <li @click="() => { if (formStore.validationSummary.warningCount > 0) openSummarySheet('warnings'); }"
+              class="item-link" :class="{ disabled: validationSummary.warningCount === 0 }">
+              <div class="item-content">
+                <div class="item-inner">
+                  <div class="item-title">Warning</div>
+                  <div class="item-after"><span class="badge color-orange">{{ validationSummary.warningCount }}</span>
+                  </div>
+                </div>
+              </div>
+            </li>
+            <li @click="() => { if (formStore.validationSummary.blankCount > 0) openSummarySheet('blanks'); }"
+              class="item-link" :class="{ disabled: validationSummary.blankCount === 0 }">
+              <div class="item-content">
+                <div class="item-inner">
+                  <div class="item-title">Kosong</div>
+                  <div class="item-after"><span class="badge color-gray">{{ validationSummary.blankCount }}</span></div>
+                </div>
+              </div>
+            </li>
+          </ul>
+        </div>
+      </f7-page>
+    </f7-popup>
 
-      <f7-block-title>Formulir Wawancara</f7-block-title>
-      <f7-list>
-        <template v-for="section in formSchema.sections" :key="section.id">
-          <f7-list-group>
-            <f7-list-item group-title :title="section.title"></f7-list-item>
-            <template v-for="question in section.questions" :key="question.id">
-              <template v-if="isQuestionVisible(question)">
-                
-                <template v-if="question.type === 'geotag'">
-                  <f7-list-item :title="question.label">
-                    <!-- PERBAIKAN: Menambahkan @click handler -->
-                    <f7-button small outline @click="handleGeotagCapture(question.id)" :disabled="isFieldDisabled(question)">Ambil Geotag</f7-button>
-                    <p v-if="formState[question.id]" class="margin-top-half">Lat: {{ formState[question.id].latitude }}, Lon: {{ formState[question.id].longitude }}</p>
-                  </f7-list-item>
-                </template>
+    <!-- Details Sheet -->
+    <f7-sheet class="summary-sheet" :opened="summarySheetOpened" @sheet:closed="summarySheetOpened = false"
+      swipe-to-close backdrop>
+      <f7-page-content>
+        <f7-block-title>Detail {{ visibleSummaryCategory }}</f7-block-title>
+        <f7-list>
+          <template v-if="visibleSummaryCategory === 'errors'">
+            <f7-list-item v-for="error in validationSummary.errors" :key="error.questionId" :title="error.label"
+              :subtitle="error.message" link @click="() => scrollToQuestion(error.questionId)"></f7-list-item>
+          </template>
+          <template v-if="visibleSummaryCategory === 'warnings'">
+            <f7-list-item v-for="warning in validationSummary.warnings" :key="warning.questionId" :title="warning.label"
+              :subtitle="warning.message" link @click="() => scrollToQuestion(warning.questionId)"></f7-list-item>
+          </template>
+          <template v-if="visibleSummaryCategory === 'blanks'">
+            <f7-list-item v-for="blank in validationSummary.blanks" :key="blank.questionId" :title="blank.label" link
+              @click="() => scrollToQuestion(blank.questionId)"></f7-list-item>
+          </template>
+        </f7-list>
+      </f7-page-content>
+    </f7-sheet>
 
-                <template v-else-if="question.type === 'photo'">
-                  <f7-list-item :title="question.label">
-                     <!-- PERBAIKAN: Menambahkan @click handler -->
-                    <f7-button small outline @click="handlePhotoCapture(question.id)" :disabled="isFieldDisabled(question)">Ambil Foto</f7-button>
-                    <img v-if="formState[question.id]" :src="formState[question.id]" width="100" class="margin-top-half" />
-                  </f7-list-item>
-                </template>
+    <div v-if="formStore.state.status === 'loading'" class="text-align-center loading-container">
+      <f7-preloader />
+      <p>Memuat formulir...</p>
+    </div>
 
-                <template v-else-if="question.type === 'select'">
-                  <f7-list-input
-                    :label="question.label"
-                    type="select"
-                    :placeholder="question.placeholder"
-                    :value="formState[question.id]"
-                    @input="formState[question.id] = $event.target.value"
-                    @blur="validateField(question.id)"
-                    :error-message="errors[question.id]"
-                    :disabled="isFieldDisabled(question)"
-                  >
-                    <option value="" disabled selected>-- Pilih --</option>
-                    <option v-for="option in question.options" :key="option.value" :value="option.value">
-                      {{ option.label }}
-                    </option>
-                  </f7-list-input>
-                </template>
+    <div v-if="formStore.state.status === 'error'" class="text-align-center error-container">
+      <p>Gagal memuat formulir. Pastikan data sudah disinkronkan.</p>
+    </div>
 
-                <template v-else>
-                  <f7-list-input
-                    :label="question.label"
-                    :type="question.type"
-                    :placeholder="question.placeholder"
-                    :value="formState[question.id]"
-                    @input="formState[question.id] = $event.target.value"
-                    @blur="validateField(question.id)"
-                    :error-message="errors[question.id]"
-                    :disabled="isFieldDisabled(question)"
-                  ></f7-list-input>
-                </template>
-              </template>
+    <template v-if="formStore.state.status === 'ready' && formStore.pages">
+      <f7-block-title class="page-title">Halaman {{ currentPageIndex + 1 }} dari {{ formStore.pages.length }}: {{
+        currentPage.title }}</f7-block-title>
+
+      <f7-list form class="no-hairlines form-inputs-list">
+        <template v-for="question in currentPage.questions" :key="question.id">
+          <div class="form-group" :data-question-id="question.id"
+            v-if="!question.conditionalLogic?.showIf || executeLogic(question.conditionalLogic.showIf, formStore.responses)">
+
+            <!-- Text, Textarea, Number Inputs -->
+            <template v-if="question.type === 'text' || question.type === 'textarea' || question.type === 'number'">
+              <div class="form-label">
+                {{ question.label }}
+                <span v-if="question.required" class="required-indicator">*</span>
+              </div>
+              <f7-list-input inputStyle="margin-left: 0; margin-right: 0;" :type="question.type"
+                :placeholder="question.placeholder || 'Masukkan jawaban...'"
+                :value="formStore.responses[question.id] || ''"
+                @input="formStore.updateResponse(question.id, $event.target.value)"
+                @blur="formStore.touchField(question.id)"
+                :class="{ 'input-error': validationErrors.has(question.id) }" :disabled="isQuestionDisabled(question)" />
+
+              <!-- Error Message (will be reactive) -->
+              <div v-if="validationErrors.has(question.id)" class="input-error-message">
+                {{ validationErrors.get(question.id).message }}
+              </div>
+
+              <div v-if="question.info" class="input-info-message">{{ question.info }}</div>
             </template>
-          </f7-list-group>
+
+            <!-- Select Input -->
+            <template v-else-if="question.type === 'select'">
+              <div class="form-label">
+                {{ question.label }}
+                <span v-if="question.required" class="required-indicator">*</span>
+              </div>
+              <f7-list-input outline type="select" :placeholder="question.placeholder || 'Pilih salah satu...'"
+                :value="formStore.responses[question.id] || ''"
+                @change="formStore.updateResponse(question.id, $event.target.value)"
+                @blur="formStore.touchField(question.id)"
+                :class="{ 'input-error': validationErrors.has(question.id) }" :disabled="isQuestionDisabled(question)">
+                <option value="" disabled>-- Pilih salah satu --</option>
+                <option v-for="option in question.options" :key="option.value" :value="option.value">
+                  {{ option.label }}
+                </option>
+              </f7-list-input>
+
+              <!-- Error Message (will be reactive) -->
+              <div v-if="validationErrors.has(question.id)" class="input-error-message">
+                {{ validationErrors.get(question.id).message }}
+              </div>
+
+              <div v-if="question.info" class="input-info-message">{{ question.info }}</div>
+            </template>
+
+            <!-- Image Input -->
+            <template v-else-if="question.type === 'image'">
+              <div class="form-label">
+                {{ question.label }}
+                <span v-if="question.required" class="required-indicator">*</span>
+              </div>
+              <input type="file" accept="image/*" capture="environment" style="display: none;"
+                :ref="(el) => (imageInputs[question.id] = el)"
+                @change="(event) => handleFileSelected(question.id, event)" />
+
+              <div class="photo-container">
+                <div class="photo-preview-container">
+                  <img v-if="formStore.responses[question.id]" :src="getImageSrc(formStore.responses[question.id])"
+                    class="photo-preview" @click="() => handleImageClick(question)" />
+                  <div v-else class="photo-placeholder" @click="() => openCamera(question.id)">
+                    <f7-icon f7="camera" size="48px" color="#999"></f7-icon>
+                    <span>Ketuk untuk mengambil foto</span>
+                  </div>
+                </div>
+
+                <f7-button large fill @click="() => openCamera(question.id)" class="photo-button" :disabled="isQuestionDisabled(question)">
+                  <f7-icon f7="camera_fill" class="margin-right-half"></f7-icon>
+                  {{ formStore.responses[question.id] ? 'Ambil Ulang Foto' : 'Ambil Foto' }}
+                </f7-button>
+              </div>
+
+              <!-- Error Message (will be reactive) -->
+              <div v-if="validationErrors.has(question.id)" class="input-error-message">
+                {{ validationErrors.get(question.id).message }}
+              </div>
+
+              <div v-if="question.info" class="input-info-message">{{ question.info }}</div>
+            </template>
+
+            <!-- Geotag Input -->
+            <template v-else-if="question.type === 'geotag'">
+              <div class="form-label">
+                {{ question.label }}
+                <span v-if="question.required" class="required-indicator">*</span>
+              </div>
+
+              <div class="geotag-container">
+                <GeotagPreview :location="formStore.responses[question.id] || null"
+                  @update:location="newLocation => formStore.updateResponse(question.id, newLocation)" />
+
+                <f7-button large fill @click="handleGeotagCapture(question.id)" class="geotag-button" :disabled="isQuestionDisabled(question)">
+                  <f7-icon f7="placemark_fill" class="margin-right-half"></f7-icon>
+                  {{ formStore.responses[question.id] ? 'Ambil Ulang Lokasi' : 'Ambil Lokasi' }}
+                </f7-button>
+              </div>
+
+              <!-- Error Message (will be reactive) -->
+              <div v-if="validationErrors.has(question.id)" class="input-error-message">
+                {{ validationErrors.get(question.id).message }}
+              </div>
+
+              <div v-if="question.info" class="input-info-message">{{ question.info }}</div>
+            </template>
+
+            <!-- Roster Input -->
+            <template v-else-if="question.type === 'roster'">
+              <RosterList :rosterQuestion="question" :rosterData="formStore.responses[question.id] || []"
+                :assignmentId="props.assignmentId" :disabled="isQuestionDisabled(question)" />
+            </template>
+
+          </div>
         </template>
       </f7-list>
 
-      <f7-block v-if="currentUserRole === 'PPL'">
-        <f7-button fill large @click="submitForm" :disabled="isSubmitDisabled">Kirim Formulir</f7-button>
+      <f7-block class="form-nav-container">
+        <div class="form-nav-buttons">
+          <f7-button large :disabled="currentPageIndex === 0 || isFormLocked" @click="prevPage" class="nav-button prev-button">
+            <f7-icon f7="chevron_left" class="margin-right-half"></f7-icon>
+            Sebelumnya
+          </f7-button>
+          <f7-button large fill :disabled="currentPageIndex >= formStore.pages.length - 1 || isFormLocked" @click="nextPage"
+            class="nav-button next-button">
+            Selanjutnya
+            <f7-icon f7="chevron_right" class="margin-left-half"></f7-icon>
+          </f7-button>
+        </div>
       </f7-block>
 
-      <f7-block class="display-flex justify-content-space-between" v-if="currentUserRole === 'PML' && assignmentResponse.status === 'Submitted by PPL'">
-        <f7-button fill large color="red" class="width-48" @click="handlePMLReject">Tolak</f7-button>
-        <f7-button fill large color="green" class="width-48" @click="handlePMLApprove">Setujui</f7-button>
-      </f7-block>
-
-      <f7-block v-if="assignmentResponse.status.startsWith('Rejected')">
-        <f7-block-title>Catatan Penolakan</f7-block-title>
-        <f7-block strong inset>
-          <p>Formulir ini ditolak. Silakan perbaiki data sesuai catatan di bawah ini.</p>
-          <p v-if="rejectionNotes"><strong>Catatan:</strong> {{ rejectionNotes }}</p>
-          <p v-else><strong>Catatan:</strong> Tidak ada catatan yang diberikan.</p>
-        </f7-block>
-      </f7-block>
-
+      <!-- FAB Safe Area: Prevents the FAB from overlapping the content above it -->
+      <div class="fab-safe-area"></div>
     </template>
   </f7-page>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, watch, computed } from 'vue';
-import { useRoute } from 'vue-router';
-import { f7 } from 'framework7-vue';
+import { ref, computed, onMounted, watch, nextTick } from 'vue';
+import { f7, f7Icon } from 'framework7-vue';
+import { useFormStore } from '@/js/stores/formStore';
+import { useAuthStore } from '@/js/stores/authStore';
 import { debounce } from 'lodash-es';
-import { z, ZodError } from 'zod';
 import { Geolocation } from '@capacitor/geolocation';
-import { Camera, CameraResultType, CameraSource } from '@capacitor/camera';
+import RosterList from '@/components/RosterList.vue';
+import { executeLogic } from '@/js/services/logicEngine';
+import ApiClient from '@/js/services/ApiClient';
+import GeotagPreview from '@/components/GeotagPreview.vue';
 
-// Impor tipe dari skema DB untuk type safety yang kuat
-import type { Assignment, AssignmentResponse, MasterData } from '../js/services/offline/ActivityDB';
-import { activityDB } from '../js/services/offline/ActivityDB';
-import { useAuthStore } from '../js/stores/auth';
-import { syncEngine } from '../js/services/sync/SyncEngine';
+const props = defineProps({ assignmentId: String });
 
-const route = useRoute();
+const formStore = useFormStore();
 const authStore = useAuthStore();
+const currentPageIndex = ref(0);
+const summaryPopupOpened = ref(false);
+const summarySheetOpened = ref(false);
+const imageInputs = ref({});
+const visibleSummaryCategory = ref('');
 
-// Deklarasi state dengan tipe eksplisit untuk type safety
-const assignmentId = ref<string | null>(null);
-const assignment = ref<Assignment | null>(null);
-const formSchema = ref<any | null>(null); // 'any' bisa diterima untuk skema form yang dinamis
-const assignmentResponse = ref<AssignmentResponse | null>(null);
-const masterData = ref<MasterData[] | null>(null);
-const rejectionNotes = ref<string | null>(null);
-const currentUserRole = ref<'PPL' | 'PML' | null>(null);
+const isPmlMode = ref(false);
+const allowedActions = ref([]);
 
-const formState = reactive<any>({});
-const errors = reactive<any>({});
+const validationSummary = computed(() => formStore.validationSummary);
 
-// --- FUNGSI UTAMA SAAT KOMPONEN DIMUAT ---
-onMounted(async () => {
-  const idFromRoute = route.params.interviewId as string;
-  if (!idFromRoute) {
-    f7.toast.show({ text: 'ID Penugasan tidak ditemukan.', position: 'bottom', closeTimeout: 3000 });
-    return;
+const getApiRoot = () => {
+  const apiUrl = import.meta.env.VITE_API_URL || '';
+  return apiUrl.replace('/api', '');
+}
+
+const getImageSrc = (value: string | null) => {
+  if (!value) return '';
+  if (value.startsWith('data:image')) {
+    return value;
   }
-  assignmentId.value = idFromRoute;
+  // Assuming the value is a relative path from the storage root, e.g., 'photos/uuid.jpg'
+  return `${getApiRoot()}/storage/${value}`;
+};
 
-  // Validasi sesi pengguna sebelum memuat data
-  if (!authStore.user?.id) {
-    f7.toast.show({ text: 'Sesi tidak valid. Silakan login kembali.', position: 'bottom', closeTimeout: 3000 });
-    // Mungkin arahkan ke halaman login
-    return;
+const currentPage = computed(() => {
+  return formStore.pages[currentPageIndex.value] || { title: '', questions: [] };
+});
+
+// This computed property is naturally reactive.
+// When formStore.validationMap changes, this will re-compute and update the UI.
+const validationErrors = computed(() => {
+  return formStore.validationMap || new Map();
+});
+
+const isFormLocked = computed(() => {
+  const status = formStore.state.assignmentResponse?.status;
+  const role = authStore.activeRole;
+
+  if (role === 'PPL') {
+    const editableStatuses = ['Opened', 'Assigned', 'Rejected by PML', 'Rejected by Admin'];
+    return !editableStatuses.includes(status);
   }
-  currentUserRole.value = authStore.user.role as 'PPL' | 'PML';
+  // For PML or any other role, the form is not locked by this global flag.
+  // Field-level disabling will be handled separately.
+  return false;
+});
 
+const handleImageClick = (question: any) => {
+  const imageValue = formStore.responses[question.id];
+  if (!imageValue) return;
+
+  // If the field is disabled for the current user (e.g. PML mode), always show the viewer.
+  // Also show viewer if the image is already synced (i.e., not a local base64 data URL).
+  if (isQuestionDisabled(question) || !imageValue.startsWith('data:image')) {
+    const imageUrl = getImageSrc(imageValue); // Use the existing helper to get the full URL
+    const photoBrowser = f7.photoBrowser.create({
+      photos: [{ url: imageUrl, caption: question.label }],
+      type: 'standalone',
+      theme: 'dark',
+      popupCloseLinkText: 'Tutup'
+    });
+    photoBrowser.open();
+  } else {
+    // Otherwise, for an editable field with a local image, allow changing the photo.
+    openCamera(question.id);
+  }
+};
+
+const isQuestionDisabled = (question: any) => {
+  const role = authStore.activeRole;
+  const status = formStore.state.assignmentResponse?.status;
+
+  // Global lock for PPL takes precedence
+  if (isFormLocked.value) {
+    return true;
+  }
+
+  // Logic for PML
+  if (role === 'PML') {
+    // PML can only edit when status is 'Submitted by PPL'
+    if (status !== 'Submitted by PPL') {
+      return true;
+    }
+    // Check the editableBy property in the form schema
+    if (question.editableBy && Array.isArray(question.editableBy)) {
+      return !question.editableBy.includes('PML');
+    }
+    // If editableBy is not defined, default to read-only for PML
+    return true;
+  }
+
+  // Default case for PPL on an unlocked form
+  return false;
+};
+
+function openSummarySheet(category: string) {
+  summaryPopupOpened.value = false;
+  nextTick(() => {
+    visibleSummaryCategory.value = category;
+    summarySheetOpened.value = true;
+  });
+}
+
+async function fetchAllowedActions() {
   try {
-    // 1. Muat data utama dari database lokal
-    assignment.value = await activityDB.assignments.get(assignmentId.value);
-    if (!assignment.value) throw new Error('Penugasan tidak ditemukan di database lokal.');
+    const actions = await ApiClient.getAllowedActions(props.assignmentId);
+    allowedActions.value = actions;
+  } catch (error) {
+    console.error("Failed to fetch allowed actions:", error);
+    allowedActions.value = [];
+  }
+}
 
-    const fsRecord = await activityDB.formSchemas.get(assignment.value.activity_id);
-    if (!fsRecord) throw new Error('Skema formulir tidak ditemukan.');
-    formSchema.value = fsRecord.schema;
-
-    masterData.value = await activityDB.masterData.where('activity_id').equals(assignment.value.activity_id).toArray();
-
-    // 2. Muat response yang ada atau buat yang baru
-    const existingResponse = await activityDB.assignmentResponses.get(assignmentId.value);
-    if (existingResponse) {
-      assignmentResponse.value = existingResponse;
-    } else {
-      // PERBAIKAN KRITIS: Menambahkan `user_id` saat membuat response baru
-      const newResponse: AssignmentResponse = {
-        assignment_id: assignmentId.value,
-        user_id: authStore.user.id,
-        status: 'Opened',
-        version: 1,
-        form_version_used: formSchema.value?.form_version || 1,
-        responses: {},
-      };
-      await activityDB.assignmentResponses.put(newResponse);
-      assignmentResponse.value = newResponse;
-    }
-
-    // 3. Inisialisasi formState dengan data yang ada
-    Object.assign(formState, assignmentResponse.value.responses);
-
-    // 4. Ambil catatan penolakan jika statusnya 'Rejected'
-    if (assignmentResponse.value.status.startsWith('Rejected')) {
-      const latestRejection = await activityDB.responseHistories
-        .where('assignment_response_id').equals(assignmentId.value)
-        .reverse() // Urutkan dari yang terbaru untuk mendapatkan yang terakhir
-        .first();
-      if (latestRejection) {
-        rejectionNotes.value = latestRejection.notes;
+function handlePmlAction(actionType: 'approve' | 'reject') {
+  if (actionType === 'reject') {
+    f7.dialog.prompt('Mohon masukkan alasan penolakan', 'Konfirmasi Tolak', (notes) => {
+      if (!notes) {
+        f7.toast.show({ text: 'Alasan penolakan wajib diisi.', position: 'bottom' });
+        return;
       }
+      console.log('Rejected with notes:', notes);
+    });
+  } else {
+    f7.dialog.confirm('Apakah Anda yakin ingin menyetujui data ini?', 'Konfirmasi Setuju', () => {
+      console.log('Approved');
+    });
+  }
+}
+
+function findQuestionPage(questionId: string): number {
+  const questionIdParts = questionId.split('.');
+  const rootQuestionId = questionIdParts[0];
+  return formStore.pages.findIndex(page => page.questions.some(q => q.id === rootQuestionId));
+}
+
+async function scrollToQuestion(questionId: string) {
+  summarySheetOpened.value = false;
+  const questionIdParts = questionId.split('.');
+  const pageIndex = findQuestionPage(questionId);
+
+  if (pageIndex !== -1 && pageIndex !== currentPageIndex.value) {
+    currentPageIndex.value = pageIndex;
+    await nextTick();
+  }
+
+  if (questionIdParts.length > 1) {
+    const rosterId = questionIdParts[0];
+    const itemIndex = questionIdParts[1];
+    const nestedQuestionId = questionIdParts.slice(2).join('.');
+    f7.views.main.router.navigate(`/interview/${props.assignmentId}/roster/${rosterId}/${itemIndex}?scrollTo=${nestedQuestionId}`);
+  } else {
+    const el = document.querySelector(`[data-question-id="${questionId}"]`);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
-  } catch (error: any) {
-    console.error('Gagal memuat data wawancara:', error);
-    f7.toast.show({ text: `Gagal memuat data: ${error.message}`, position: 'bottom', closeTimeout: 4000 });
+  }
+}
+
+function onPageAfterIn() {
+  // Placeholder for now
+}
+
+onMounted(() => {
+  if (props.assignmentId) {
+    formStore.loadAssignmentFromLocalDB(props.assignmentId);
+  }
+  if (authStore.activeRole === 'PML') {
+    isPmlMode.value = true;
+    // fetchAllowedActions(); // TODO: Re-enable when backend route is available
   }
 });
 
-// --- AUTO-SAVE ---
-const debouncedSave = debounce(async () => {
-  if (assignmentResponse.value) {
-    assignmentResponse.value.responses = { ...formState };
-    assignmentResponse.value.version += 1; // Selalu naikkan versi setiap ada perubahan
-    await activityDB.assignmentResponses.put(assignmentResponse.value);
-    console.log('Auto-saved response version:', assignmentResponse.value.version);
-  }
+// Since v-model updates the store directly, the watcher on responses
+// will trigger the debounced save automatically.
+const debouncedSave = debounce(() => {
+  formStore.saveResponsesToLocalDB();
 }, 1500);
 
-watch(formState, debouncedSave, { deep: true });
+watch(() => formStore.responses, debouncedSave, { deep: true });
 
-// --- COMPUTED PROPERTIES UNTUK LOGIKA TAMPILAN ---
-const hasErrors = computed(() => Object.keys(errors).length > 0);
-
-const isSubmitDisabled = computed(() => {
-  if (!assignmentResponse.value) return true;
-  const status = assignmentResponse.value.status;
-  // Nonaktifkan jika ada error atau jika sudah dikirim/disetujui
-  return hasErrors.value || status === 'Submitted by PPL' || status === 'Approved by PML' || status === 'Approved by Admin';
-});
-
-// --- FUNGSI BANTUAN & LOGIKA FORMULIR ---
-const findQuestionById = (id: string): any | null => {
-  for (const section of formSchema.value?.sections || []) {
-    const question = section.questions.find((q: any) => q.id === id);
-    if (question) return question;
+function openCamera(questionId: string) {
+  const inputEl = imageInputs.value[questionId];
+  if (inputEl) {
+    inputEl.click();
   }
-  return null;
-};
+}
 
-const validateField = (fieldId: string) => {
-  const question = findQuestionById(fieldId);
-  if (question?.validation) {
-    try {
-      // Asumsi validasi menggunakan Zod schema yang disimpan di formSchema
-      (question.validation as z.ZodTypeAny).parse(formState[fieldId]);
-      delete errors[fieldId];
-    } catch (e) {
-      if (e instanceof ZodError) {
-        errors[fieldId] = e.errors.map(err => err.message).join(', ');
-      }
-    }
+async function handleFileSelected(questionId: string, event: Event) {
+  const target = event.target as HTMLInputElement;
+  if (target.files && target.files[0]) {
+    const file = target.files[0];
+    const base64Data = await fileToBase64(file);
+    formStore.updateResponse(questionId, base64Data);
   }
-};
+}
 
-const isQuestionVisible = (question: any): boolean => {
-  if (!question.conditionalLogic?.showIf) return true;
-  const condition = question.conditionalLogic.showIf;
-  const targetFieldId = Object.keys(condition)[0];
-  const requiredValue = condition[targetFieldId];
-  return formState[targetFieldId] === requiredValue;
-};
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = (error) => reject(error);
+  });
+}
 
-const isFieldDisabled = (question: any): boolean => {
-  const status = assignmentResponse.value?.status;
-  if (!status) return true;
-
-  if (currentUserRole.value === 'PPL') {
-    // PPL bisa mengedit jika status 'Opened' atau 'Rejected'. Selain itu, terkunci.
-    return !(status === 'Opened' || status.startsWith('Rejected'));
-  }
-
-  if (currentUserRole.value === 'PML') {
-    // PML hanya bisa mengedit jika status 'Submitted by PPL' dan jika field memperbolehkan
-    return !(status === 'Submitted by PPL' && question.editableBy?.includes('PML'));
-  }
-
-  return true; // Kunci secara default
-};
-
-const getStatusChipColor = (status: string): string => {
-  if (status.startsWith('Approved')) return 'green';
-  if (status.startsWith('Submitted')) return 'orange';
-  if (status.startsWith('Rejected')) return 'red';
-  if (status === 'Opened') return 'blue';
-  return 'gray';
-};
-
-// --- HANDLER UNTUK AKSI PENGGUNA ---
-const handleGeotagCapture = async (questionId: string) => {
+async function handleGeotagCapture(questionId: string) {
   try {
     f7.dialog.preloader('Mengambil Lokasi...');
     const position = await Geolocation.getCurrentPosition({ enableHighAccuracy: true, timeout: 10000 });
     f7.dialog.close();
-    formState[questionId] = {
-      latitude: position.coords.latitude.toFixed(7),
-      longitude: position.coords.longitude.toFixed(7),
+    const location = {
+      latitude: position.coords.latitude,
+      longitude: position.coords.longitude,
       accuracy: position.coords.accuracy,
       timestamp: new Date(position.timestamp).toISOString(),
     };
+    formStore.updateResponse(questionId, location);
   } catch (error) {
     f7.dialog.close();
     console.error('Gagal mengambil geotag:', error);
     f7.toast.show({ text: 'Gagal mengambil geotag. Pastikan GPS aktif.', position: 'bottom', closeTimeout: 3000 });
   }
-};
+}
 
-const handlePhotoCapture = async (questionId: string) => {
-  try {
-    const photo = await Camera.getPhoto({
-      quality: 90,
-      allowEditing: false,
-      resultType: CameraResultType.Uri,
-      source: CameraSource.Camera,
-    });
-    // Di mobile, webPath adalah path file sementara yang bisa ditampilkan
-    if (photo.webPath) {
-      formState[questionId] = photo.webPath;
-    }
-  } catch (error) {
-    console.error('Gagal mengambil foto:', error);
-    f7.toast.show({ text: 'Gagal mengambil foto.', position: 'bottom', closeTimeout: 3000 });
+function nextPage() {
+  if (currentPageIndex.value < formStore.pages.length - 1) {
+    currentPageIndex.value++;
   }
-};
+}
 
-const submitForm = async () => {
-  // Jalankan validasi untuk semua field yang terlihat
-  formSchema.value.sections.forEach((section: any) => {
-    section.questions.forEach((question: any) => {
-      if (isQuestionVisible(question)) {
-        validateField(question.id);
-      }
-    });
-  });
+function prevPage() {
+  if (currentPageIndex.value > 0) {
+    currentPageIndex.value--;
+  }
+}
 
-  if (hasErrors.value) {
-    f7.dialog.alert('Harap perbaiki isian yang salah sebelum mengirim.');
+function submitForm() {
+  // First, check for validation errors
+  if (formStore.validationSummary.errorCount > 0) {
+    f7.dialog.alert('Masih ada isian yang salah (error). Mohon perbaiki sebelum submit.', 'Validasi Gagal');
     return;
   }
 
-  f7.dialog.confirm('Anda yakin ingin mengirim formulir ini?', 'Konfirmasi Pengiriman', async () => {
-    if (assignmentResponse.value && assignment.value) {
-      assignmentResponse.value.status = 'Submitted by PPL';
-      assignmentResponse.value.submitted_by_ppl_at = new Date().toISOString();
-      assignmentResponse.value.version += 1;
-      await activityDB.assignmentResponses.put(assignmentResponse.value);
-
-      // Antrekan untuk sinkronisasi
-      syncEngine.queueForSync('submitAssignment', {
-        activityId: assignment.value.activity_id,
-        assignmentResponse: assignmentResponse.value,
-      });
-
-      f7.toast.show({ text: 'Formulir berhasil dikirim!', position: 'bottom', closeTimeout: 2000, cssClass: 'success-toast' });
+  f7.dialog.confirm('Apakah Anda yakin ingin menandai formulir ini sebagai selesai dan mengirimnya?', 'Konfirmasi Submit', async () => {
+    try {
+      f7.dialog.preloader('Submitting...');
+      await formStore.submitAssignment();
+      f7.dialog.close();
+      f7.toast.show({ text: 'Formulir berhasil di-submit dan masuk antrean sinkronisasi!', closeTimeout: 3000 });
       f7.views.main.router.back();
+    } catch (error) {
+      f7.dialog.close();
+      console.error('Failed to submit assignment:', error);
+      f7.dialog.alert('Gagal melakukan submit. Silakan coba lagi.', 'Error');
     }
   });
-};
-
-// --- AKSI KHUSUS PML ---
-const handlePMLApprove = async () => {
-  f7.dialog.confirm('Anda yakin ingin MENYETUJUI penugasan ini?', 'Konfirmasi Persetujuan', async () => {
-    if (assignmentResponse.value) {
-      assignmentResponse.value.status = 'Approved by PML';
-      assignmentResponse.value.reviewed_by_pml_at = new Date().toISOString();
-      assignmentResponse.value.version += 1;
-      await activityDB.assignmentResponses.put(assignmentResponse.value);
-
-      syncEngine.queueForSync('approveAssignment', {
-        assignmentId: assignmentResponse.value.assignment_id,
-        status: assignmentResponse.value.status,
-      });
-
-      f7.toast.show({ text: 'Penugasan disetujui.', position: 'bottom', closeTimeout: 2000 });
-      f7.views.main.router.back();
-    }
-  });
-};
-
-const handlePMLReject = async () => {
-  f7.dialog.prompt('Masukkan alasan penolakan (wajib diisi):', 'Tolak Penugasan', async (notes) => {
-    if (!notes || notes.trim() === '') {
-      f7.toast.show({ text: 'Alasan penolakan wajib diisi.', position: 'bottom', closeTimeout: 2000 });
-      return;
-    }
-    
-    if (assignmentResponse.value && authStore.user?.id) {
-      const fromStatus = assignmentResponse.value.status; // Simpan status sebelumnya
-      assignmentResponse.value.status = 'Rejected by PML';
-      assignmentResponse.value.reviewed_by_pml_at = new Date().toISOString();
-      assignmentResponse.value.version += 1;
-      
-      // Simpan catatan ke tabel riwayat
-      await activityDB.responseHistories.add({
-        assignment_response_id: assignmentResponse.value.assignment_id,
-        user_id: authStore.user.id,
-        from_status: fromStatus,
-        to_status: 'Rejected by PML',
-        notes: notes,
-        created_at: new Date().toISOString(),
-      });
-
-      await activityDB.assignmentResponses.put(assignmentResponse.value);
-
-      syncEngine.queueForSync('rejectAssignment', {
-        assignmentId: assignmentResponse.value.assignment_id,
-        status: assignmentResponse.value.status,
-        notes: notes,
-      });
-
-      f7.toast.show({ text: 'Penugasan ditolak.', position: 'bottom', closeTimeout: 2000 });
-      f7.views.main.router.back();
-    }
-  });
-};
+}
 </script>
+
+<style scoped>
+/* Loading and error states */
+.loading-container,
+.error-container {
+  padding: 32px 16px;
+}
+
+/* Page title styling */
+.page-title {
+  margin: 16px 0 8px 0;
+  padding: 0 16px;
+}
+
+/* Main container for form inputs with consistent horizontal padding */
+.form-inputs-list {
+  padding: 0 16px;
+  margin-top: 8px;
+}
+
+/* A single form question group with increased bottom margin for spacing */
+.form-group {
+  margin-bottom: 32px;
+}
+
+.form-label {
+  font-size: 15px;
+  font-weight: 600;
+  color: #333;
+  margin-bottom: 10px;
+  line-height: 1.4;
+}
+
+.required-indicator {
+  color: var(--f7-color-red);
+  margin-left: 4px;
+}
+
+/* Input styling improvements */
+.form-inputs-list :deep(.list-input) {
+  margin-bottom: 0;
+}
+
+.form-inputs-list :deep(.item-input input),
+.form-inputs-list :deep(.item-input select),
+.form-inputs-list :deep(.item-input textarea) {
+  font-size: 16px;
+}
+
+.input-error {
+  --f7-input-outline-border-color: var(--f7-color-red) !important;
+}
+
+/* Enhanced error message styling with forced visibility */
+.input-error-message {
+  color: var(--f7-color-red) !important;
+  font-size: 13px;
+  margin-top: 6px;
+  font-weight: 500;
+  display: block !important;
+  visibility: visible !important;
+  min-height: 18px;
+  line-height: 1.4;
+  opacity: 1 !important;
+  position: relative !important;
+  z-index: 10;
+}
+
+.input-info-message {
+  color: var(--f7-text-color-secondary);
+  font-size: 13px;
+  margin-top: 6px;
+  line-height: 1.4;
+}
+
+/* Photo container improvements */
+.photo-container {
+  margin-bottom: 16px;
+}
+
+.photo-preview-container {
+  width: 100%;
+  position: relative;
+  background-color: #f8f9fa;
+  border-radius: 12px;
+  overflow: hidden;
+  margin-bottom: 16px;
+  border: 2px dashed #dee2e6;
+  transition: border-color 0.2s;
+}
+
+.photo-preview-container:hover {
+  border-color: #adb5bd;
+}
+
+.photo-preview-container:before {
+  content: '';
+  display: block;
+  padding-top: 56.25%;
+  /* 16:9 Aspect Ratio */
+}
+
+.photo-preview {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.photo-preview:hover {
+  opacity: 0.9;
+}
+
+.photo-placeholder {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: #6c757d;
+  cursor: pointer;
+  transition: color 0.2s;
+}
+
+.photo-placeholder:hover {
+  color: #495057;
+}
+
+.photo-placeholder span {
+  font-size: 14px;
+  margin-top: 12px;
+  font-weight: 500;
+}
+
+.photo-button {
+  margin: 0;
+}
+
+/* Geotag container improvements */
+.geotag-container {
+  margin-bottom: 16px;
+}
+
+.geotag-button {
+  margin-top: 16px;
+}
+
+/* Navigation buttons container */
+.form-nav-container {
+  padding: 16px;
+  margin-top: 24px;
+}
+
+.form-nav-buttons {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.nav-button {
+  min-width: 120px;
+  flex: 1;
+}
+
+.prev-button {
+  max-width: 140px;
+}
+
+.next-button {
+  max-width: 140px;
+}
+
+/* Spacer to prevent content from hiding behind the FAB */
+.fab-safe-area {
+  height: 100px;
+}
+
+/* Deep selector to override default Framework7 list item padding inside our form */
+.form-inputs-list :deep(.item-content) {
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.form-inputs-list :deep(.item-inner) {
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+
+/* Improve list styling */
+.form-inputs-list :deep(.list) {
+  margin: 0;
+}
+
+.form-inputs-list :deep(.list ul) {
+  background: none;
+}
+
+.form-inputs-list :deep(.list ul:before),
+.form-inputs-list :deep(.list ul:after) {
+  display: none;
+}
+
+/* Button icon spacing */
+.margin-right-half {
+  margin-right: 4px;
+}
+
+.margin-left-half {
+  margin-left: 4px;
+}
+</style>

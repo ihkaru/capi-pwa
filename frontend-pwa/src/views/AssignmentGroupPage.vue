@@ -52,6 +52,7 @@ const dashboardStore = useDashboardStore();
 
 onMounted(() => {
   const activityId = props.f7route?.params?.activityId;
+  console.log(`AssignmentGroupPage: Page is active for activity ID: ${activityId}`);
   // Data seharusnya sudah dimuat oleh halaman dasbor sebelumnya,
   // tapi kita panggil lagi untuk memastikan jika halaman ini di-refresh langsung.
   if (activityId && dashboardStore.activity?.id !== activityId) {

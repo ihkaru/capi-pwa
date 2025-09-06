@@ -48,7 +48,7 @@ export default defineConfig({
 
   // --- OPSI LAINNYA ---
   // Mengatur base URL aplikasi. Kosong ('') berarti path relatif.
-  base: 'http://localhost:5173',
+  base: '',
   // Direktori untuk file statis (seperti favicon).
   publicDir: './public',
 });

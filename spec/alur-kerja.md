@@ -223,9 +223,13 @@ Meskipun `admin_kegiatan` tidak dapat mengedit data selama periode pengumpulan d
 
 1.  **Mekanisme:** Setiap pembaruan data yang dikirim ke server harus menyertakan nomor `version` yang dimiliki oleh PWA.
 2.  **Validasi Server:** Server akan membandingkan `version` yang masuk dengan `version` di database.
-    - **Versi Cocok:** Pembaruan diterima, dan server akan menaikkan nomor `version`-nya.
-    - **Versi Tidak Cocok (Konflik):** Pembaruan ditolak dengan error `409 Conflict`.
-3.  **Penanganan di PWA:** Jika PWA menerima error `409`, ini menandakan data di server lebih baru. PWA akan menghentikan proses kirim, mengunduh data terbaru dari server, dan memberitahu pengguna. Ini memastikan tidak ada data yang tertimpa secara tidak sengaja, misalnya saat sinkronisasi dari dua perangkat yang berbeda.
+    -   **Versi Cocok:** Pembaruan diterima, dan server akan menaikkan nomor `version`-nya.
+    -   **Versi Tidak Cocok (Konflik `409`):** Pembaruan ditolak dengan error `409 Conflict`. Ini menandakan bahwa data di server telah diperbarui oleh perangkat lain atau Admin sejak terakhir kali PWA melakukan sinkronisasi.
+3.  **Penanganan Konflik di PWA (Strategi "Server Wins"):**
+    -   Jika PWA menerima error `409 Conflict` saat mencoba mengirim data (misalnya, saat PPL menekan "Submit"), PWA akan menghentikan proses pengiriman untuk item tersebut.
+    -   PWA akan menampilkan dialog peringatan yang jelas kepada pengguna. Pesan akan menyatakan: "**Konflik Sinkronisasi:** Tugas ini telah diperbarui di server oleh perangkat lain. Perubahan lokal Anda tidak dapat dikirim. Mohon cadangkan data penting secara manual (misalnya, dengan tangkapan layar), lalu lakukan 'Sync Perubahan' untuk mendapatkan versi terbaru dari server."
+    -   Setelah pengguna menutup dialog, item yang gagal akan dihapus dari antrean sinkronisasi (`sync_queue`) untuk mencegah percobaan ulang yang tidak perlu.
+    -   **Penting:** Untuk menyelesaikan konflik, pengguna **wajib** melakukan "Sync Perubahan" (Delta Download). Proses ini akan menimpa data lokal dengan versi yang ada di server, sehingga perubahan lokal yang belum disinkronkan akan hilang. Pengguna harus memahami implikasi ini dan melakukan pencadangan manual jika diperlukan.
 
 ## 6. Strategi Sinkronisasi Data (PWA)
 

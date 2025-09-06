@@ -62,6 +62,7 @@ const dashboardStore = useDashboardStore();
 // Ini memastikan data di UI selalu fresh dari database lokal tanpa dialog yang mengganggu.
 const onPageAfterIn = async () => {
   const activityId = props.f7route?.params?.activityId;
+  console.log(`ActivityDashboardPage: Page is active for activity ID: ${activityId}`);
   if (activityId) {
     await dashboardStore.loadDashboardData(activityId);
   } else {

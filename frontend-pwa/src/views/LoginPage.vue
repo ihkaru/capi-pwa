@@ -27,7 +27,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
 import { f7, f7ready } from 'framework7-vue';
-import { useAuthStore } from "@/js/stores/auth";
+import { useAuthStore } from "@/js/stores/authStore";
 import apiClient from '@/js/services/ApiClient'; // Impor ApiClient di sini
 import type { CredentialResponse } from 'google-one-tap';
 

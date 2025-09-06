@@ -6,6 +6,7 @@ use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
 use App\Models\KegiatanStatistik;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\File;
 
 class KegiatanStatistikSeeder extends Seeder
 {
@@ -14,16 +15,13 @@ class KegiatanStatistikSeeder extends Seeder
      */
     public function run(): void
     {
-        $formSchemaTemplate = json_encode([
-            "masters_used" => [
-                ["type" => "KBLI", "version" => 2020],
-                ["type" => "WILAYAH_INDONESIA", "version" => 1],
-            ],
-            "level_definitions" => new \stdClass(),
-            "assignment_table_grouping_levels" => [],
-            "assignment_table_columns" => [],
-            "pages" => []
-        ], JSON_PRETTY_PRINT);
+        // Load the detailed schema for REGSOSEK 2022 - LISTING from the frontend dev-data
+        $listingSchemaPath = base_path('../frontend-pwa/public/dev-data/regsosek-listing-schema.json');
+        $listingSchemaJson = File::get($listingSchemaPath);
+
+        // Load the detailed schema for REGSOSEK 2022 - PENDATAAN
+        $pendataanSchemaPath = base_path('../frontend-pwa/public/dev-data/regsosek-pendataan-schema.json');
+        $pendataanSchemaJson = File::get($pendataanSchemaPath);
 
         // Create specific activities for the case study
         KegiatanStatistik::firstOrCreate(
@@ -32,7 +30,7 @@ class KegiatanStatistikSeeder extends Seeder
                 'year' => 2022,
                 'start_date' => Carbon::create(2022, 10, 15),
                 'end_date' => Carbon::create(2022, 11, 14),
-                'form_schema' => $formSchemaTemplate,
+                'form_schema' => json_decode($listingSchemaJson, true),
                 'form_version' => 1,
             ]
         );
@@ -43,7 +41,7 @@ class KegiatanStatistikSeeder extends Seeder
                 'year' => 2022,
                 'start_date' => Carbon::create(2022, 10, 15),
                 'end_date' => Carbon::create(2022, 11, 14),
-                'form_schema' => $formSchemaTemplate,
+                'form_schema' => json_decode($pendataanSchemaJson, true),
                 'form_version' => 1,
             ]
         );

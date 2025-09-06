@@ -10,43 +10,63 @@ import Framework7Vue, { registerComponents } from 'framework7-vue/bundle';
 // Import Framework7 Styles
 import 'framework7/css/bundle';
 
+// Import Framework7 Icons
+import 'framework7-icons/css/framework7-icons.css';
+
+
 // Import Icons and App Custom Styles
 import '../css/icons.css';
 import '../css/app.scss';
 
 // Import App Component
 import App from '../components/app.vue';
-import { useAuthStore } from './stores/auth';
-import apiClient from './services/ApiClient.ts'; // Import apiClient
-import { syncEngine } from './services/sync/SyncEngine'; // Import SyncEngine
 
-import routes from './routes'; // Import your routes
+// Import Pinia
+import pinia from './pinia';
 
-// Init Framework7-Vue Plugin
+// Import Stores and Services
+import { useAuthStore } from './stores/authStore';
+import apiClient from './services/ApiClient';
+import { syncEngine } from './services/sync/SyncEngine';
+
+// Import Capacitor PWA Elements
+import { defineCustomElements } from '@ionic/pwa-elements/loader';
+
+// Init F7-Vue Plugin
 Framework7.use(Framework7Vue);
 
-// Init App
+// Create Vue App
 const app = createApp(App);
 
 // Use Pinia
-import pinia from './pinia';
 app.use(pinia);
+
+// Register all F7 components
+registerComponents(app);
+
+// Initialize Capacitor PWA Elements
+defineCustomElements(window);
 
 // Check auth status on app start
 const authStore = useAuthStore();
 authStore.checkAuth();
-console.log('App.js: After checkAuth(), authStore.token:', authStore.token ? 'Present' : 'Absent'); // NEW LOG
 
-// Initialize ApiClient interceptors after Pinia and authStore are ready
+// Initialize ApiClient interceptors
 apiClient.initialize();
-console.log('App.js: ApiClient initialized.'); // NEW LOG
 
-// Start the SyncEngine background process
+// Start the SyncEngine
 syncEngine.startSync();
-console.log('App.js: SyncEngine started.'); // NEW LOG
-
-// Register Framework7 Vue components
-registerComponents(app);
 
 // Mount the app
 app.mount('#app');
+
+// PWA Service Worker registration
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/service-worker.js')
+    .then((registration) => {
+      console.log('Service Worker registered with scope:', registration.scope);
+    })
+    .catch((error) => {
+      console.error('Service Worker registration failed:', error);
+    });
+}

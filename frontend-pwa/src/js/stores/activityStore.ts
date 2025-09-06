@@ -4,7 +4,7 @@ import { ref, computed } from 'vue';
 import { f7 } from 'framework7-vue';
 import apiClient from '../services/ApiClient';
 import { activityDB } from '../services/offline/ActivityDB';
-import { useAuthStore } from './auth';
+import { useAuthStore } from './authStore';
 import { useAppMetadataStore } from './appMetadata';
 
 export const useActivityStore = defineStore('activity', () => {
@@ -15,36 +15,51 @@ export const useActivityStore = defineStore('activity', () => {
 
   const currentUserId = computed(() => authStore.user?.id);
 
-  async function fetchActivities() {
-    // Guard Clause: Jika aktivitas sudah ada, jangan fetch ulang.
-    if (activities.value.length > 0) {
-      console.log('ActivityStore: Activities already exist, skipping fetch.');
-      return;
-    }
+  async function fetchActivities(force = false) {
+    if (isLoading.value && !force) return;
 
-    console.log('ActivityStore: fetchActivities started.');
+    console.log(`ActivityStore: fetchActivities started. Force fetch: ${force}`);
     if (!currentUserId.value) {
       f7.toast.show({ text: 'Tidak dapat memuat kegiatan: Pengguna tidak terautentikasi.', cssClass: 'error-toast' });
       return;
     }
 
     isLoading.value = true;
+
     // Selalu coba muat dari lokal dulu untuk UI yang cepat
     const localActivities = await activityDB.activities.where('user_id').equals(currentUserId.value).toArray();
     if (localActivities.length > 0) {
       activities.value = localActivities;
+      console.log('ActivityStore: Loaded activities from local DB.');
     }
 
-    // Tampilkan dialog hanya saat mengambil dari jaringan
-    f7.dialog.preloader('Memuat Kegiatan...');
+    // Cek koneksi sebelum fetch dari jaringan
+    if (!navigator.onLine) {
+      f7.toast.show({
+        text: 'Anda sedang offline. Menampilkan data lokal.',
+        position: 'bottom',
+        closeTimeout: 3000,
+      });
+      isLoading.value = false;
+      console.log('ActivityStore: Offline mode, skipping network fetch.');
+      return;
+    }
+
+    // Lanjutkan fetch dari jaringan jika online
     try {
+      f7.dialog.preloader('Memperbarui Kegiatan...');
       const fetchedActivities = await apiClient.getActivitiesForUser();
+
+      // Hapus data LAMA milik pengguna ini sebelum memasukkan yang BARU
+      await activityDB.activities.where('user_id').equals(currentUserId.value).delete();
 
       if (fetchedActivities && fetchedActivities.length > 0) {
         const activitiesWithUserId = fetchedActivities.map(activity => ({ ...activity, user_id: currentUserId.value }));
-        await activityDB.activities.where('user_id').equals(currentUserId.value).delete();
         await activityDB.activities.bulkPut(activitiesWithUserId);
-      } 
+        console.log(`ActivityStore: Stored ${activitiesWithUserId.length} new activities from API.`);
+      } else {
+        console.log('ActivityStore: No activities returned from API.');
+      }
 
       // Selalu baca ulang dari DB untuk memastikan state sinkron
       activities.value = await activityDB.activities.where('user_id').equals(currentUserId.value).toArray();
@@ -58,7 +73,6 @@ export const useActivityStore = defineStore('activity', () => {
       console.error('Failed to fetch activities:', error);
       f7.toast.show({ text: 'Gagal memuat daftar kegiatan dari server.', cssClass: 'error-toast' });
     } finally {
-      // Selalu tutup dialog dan set status loading
       f7.dialog.close();
       isLoading.value = false;
       console.log('ActivityStore: fetchActivities finished.');
@@ -149,11 +163,18 @@ export const useActivityStore = defineStore('activity', () => {
     });
   }
 
+  function reset() {
+    activities.value = [];
+    isLoading.value = false;
+    console.log('ActivityStore: Reset.');
+  }
+
   return {
     activities,
     isLoading,
     fetchActivities,
     syncActivities,
     fullSyncActivities,
+    reset, // <-- Ekspor aksi baru
   };
 });

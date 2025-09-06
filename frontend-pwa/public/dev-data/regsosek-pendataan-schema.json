@@ -1,0 +1,151 @@
+
+{
+  "form_name": "REGSOSEK 2022 - PENDATAAN",
+  "form_version": 1,
+  "masters_used": [],
+  "level_definitions": {
+    "level_1_code": "Provinsi",
+    "level_2_code": "Kabupaten/Kota",
+    "level_3_code": "Kecamatan",
+    "level_4_code": "Desa/Kelurahan",
+    "level_5_code": "SLS",
+    "level_6_code": "Sub-SLS"
+  },
+  "assignment_table_grouping_levels": [
+    "level_5_code",
+    "level_4_code"
+  ],
+  "assignment_table_columns": [
+    { "key": "prefilled.nama_krt", "label": "Kepala Rumah Tangga" },
+    { "key": "prefilled.alamat", "label": "Alamat" },
+    { "key": "status", "label": "Status Terakhir" }
+  ],
+  "pages": [
+    {
+      "title": "Keterangan Kepala Keluarga",
+      "questions": [
+        {
+          "id": "nama_krt_verifikasi",
+          "type": "text",
+          "label": "Nama Kepala Keluarga (hasil verifikasi)",
+          "placeholder": "Masukkan nama KRT sesuai KTP",
+          "validation": {
+            "required": true
+          }
+        },
+        {
+          "id": "nik_krt",
+          "type": "number",
+          "label": "NIK Kepala Keluarga",
+          "placeholder": "Masukkan 16 digit NIK",
+          "validation": {
+            "minLength": 16,
+            "maxLength": 16
+          }
+        },
+        {
+          "id": "foto_rumah",
+          "type": "image",
+          "label": "Foto Depan Rumah",
+          "validation": {
+            "required": true
+          }
+        },
+        {
+          "id": "geotag_rumah",
+          "type": "geotag",
+          "label": "Lokasi Geotag Rumah",
+          "validation": {
+            "required": true
+          }
+        }
+      ]
+    },
+    {
+      "title": "Keterangan Perumahan",
+      "questions": [
+        {
+          "id": "status_kepemilikan_bangunan",
+          "type": "select",
+          "label": "Status Kepemilikan Bangunan Tempat Tinggal",
+          "options": [
+            { "label": "Milik Sendiri", "value": "1" },
+            { "label": "Kontrak/Sewa", "value": "2" },
+            { "label": "Bebas Sewa", "value": "3" },
+            { "label": "Dinas", "value": "4" },
+            { "label": "Lainnya", "value": "5" }
+          ],
+          "validation": {
+            "required": true
+          }
+        },
+        {
+          "id": "sumber_air_minum",
+          "type": "select",
+          "label": "Sumber Air Minum Utama",
+           "options": [
+            { "label": "Air kemasan/isi ulang", "value": "1" },
+            { "label": "Leding", "value": "2" },
+            { "label": "Sumur bor/pompa", "value": "3" },
+            { "label": "Sumur terlindung", "value": "4" },
+            { "label": "Sumur tak terlindung", "value": "5" }
+          ],
+          "validation": {
+            "required": true
+          }
+        },
+        {
+          "id": "punya_mobil",
+          "type": "select",
+          "label": "Apakah memiliki mobil?",
+          "options": [
+            { "label": "Ya", "value": "ya" },
+            { "label": "Tidak", "value": "tidak" }
+          ]
+        },
+        {
+          "id": "merk_mobil",
+          "type": "text",
+          "label": "Sebutkan merk mobil",
+          "conditionalLogic": {
+            "showIf": "return context.get('punya_mobil') === 'ya'"
+          },
+          "validation": {
+            "required": true
+          }
+        }
+      ]
+    },
+    {
+      "title": "Daftar Anggota Rumah Tangga",
+      "questions": [
+        {
+          "id": "anggota_rumah_tangga",
+          "type": "roster",
+          "item_label": "Anggota Rumah Tangga",
+          "questions": [
+            {
+              "id": "nama_art",
+              "type": "text",
+              "label": "Nama Anggota Rumah Tangga",
+              "placeholder": "Masukkan nama",
+              "validation": {
+                "required": true
+              }
+            },
+            {
+              "id": "umur_art",
+              "type": "number",
+              "label": "Umur (tahun)",
+              "placeholder": "Masukkan umur",
+              "validation": {
+                "required": true,
+                "min": 0
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
