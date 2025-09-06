@@ -343,6 +343,72 @@ export const useFormStore = defineStore('form', () => {
         await syncEngine.queueForSync('submitAssignment', payload);
     }
 
+    async function approveAssignment() {
+        if (!state.value.assignment || !state.value.assignmentResponse) {
+            throw new Error('Cannot approve, essential data is not loaded.');
+        }
+        if (authStore.activeRole !== 'PML') {
+            throw new Error('Only PML can approve an assignment.');
+        }
+
+        state.value.assignmentResponse.status = 'Approved by PML';
+        await saveResponsesToLocalDB();
+
+        const payload = {
+            assignmentId: state.value.assignment.id,
+            status: 'Approved by PML',
+        };
+
+        await syncEngine.queueForSync('approveAssignment', payload);
+    }
+
+    async function rejectAssignment(notes: string) {
+        if (!state.value.assignment || !state.value.assignmentResponse) {
+            throw new Error('Cannot reject, essential data is not loaded.');
+        }
+        if (authStore.activeRole !== 'PML') {
+            throw new Error('Only PML can reject an assignment.');
+        }
+        // Notes are optional for reject
+
+        state.value.assignmentResponse.status = 'Rejected by PML';
+        // IMPROVEMENT: Store rejection notes in the assignmentResponse if schema allows
+        await saveResponsesToLocalDB();
+
+        const payload = {
+            assignmentId: state.value.assignment.id,
+            status: 'Rejected by PML',
+            notes: notes,
+        };
+
+        await syncEngine.queueForSync('rejectAssignment', payload);
+    }
+
+    async function revertApproval(notes: string) {
+        if (!state.value.assignment || !state.value.assignmentResponse) {
+            throw new Error('Cannot revert approval, essential data is not loaded.');
+        }
+        if (authStore.activeRole !== 'PML') {
+            throw new Error('Only PML can revert an approval.');
+        }
+        // Notes are optional for revert, but good practice to encourage
+
+        state.value.assignmentResponse.status = 'Submitted by PPL';
+        // Optionally, store notes for revert action
+        if (notes) {
+            state.value.assignmentResponse.notes = notes; // Assuming 'notes' field exists
+        }
+        await saveResponsesToLocalDB();
+
+        const payload = {
+            assignmentId: state.value.assignment.id,
+            status: 'Submitted by PPL',
+            notes: notes,
+        };
+
+        await syncEngine.queueForSync('revertApproval', payload);
+    }
+
     function addRosterItem(rosterQuestionId: string) {
         if (state.value.assignmentResponse) {
             if (!state.value.assignmentResponse.responses[rosterQuestionId]) {
@@ -378,6 +444,9 @@ export const useFormStore = defineStore('form', () => {
         removeRosterItem,
         touchField,
         submitAssignment,
+        approveAssignment,
+        rejectAssignment,
+        revertApproval,
     };
 });
 

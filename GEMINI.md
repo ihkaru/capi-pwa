@@ -117,7 +117,9 @@ The application is stable and the core data pipeline is robust.
 *   **Validation & Summary (Robust):** The form now has a fully functional, real-time validation summary. It correctly counts and lists errors, warnings, and blank fields, and allows users to jump to the relevant question, even within nested rosters. The feature is resilient against UI library reactivity bugs.
 *   **PWA Features Working:** PWA-specific functionalities like the device camera (using a robust file-input fallback), geolocation, and an integrated photo viewer are now correctly configured and operational.
 *   **End-to-End Data Flow:** The full data pipeline from the backend (Laravel Seeder) -> API -> `dashboardStore` -> Dexie (local DB) -> `formStore` -> Vue Component is functioning correctly.
-*   **PML Review Workflow (Functional):** The core workflow for a PML to download, view, and interact with a PPL's submitted assignment is now functional. This includes correctly loading and displaying the PPL's data and locking/unlocking fields based on the user's role.
+*   **PML Review Workflow (Functional):** The core workflow for a PML to download, view, and interact with a PPL's submitted assignment is now functional. This includes correctly loading and displaying the PPL's data and locking/unlocking fields based on the user's role. Rejection notes are now optional for PMLs.
+*   **Automatic Delta Sync:** The application now automatically triggers a delta synchronization in the background when the user returns to the Assignment List Page, *but only if a status-changing action (Submit, Approve, Reject, Revert Approval) was performed on the Interview Form Page*, ensuring up-to-date assignment statuses.
+*   **Consistent Status Coloring:** Assignment statuses are now consistently colored across `AssignmentListPage.vue`, `ActivityDashboardPage.vue`, and `AssignmentGroupPage.vue` for improved visual clarity.
 
 ### **3. Overall Roadmap**
 
@@ -131,7 +133,7 @@ The high-level roadmap remains the same, with our focus still on the main CAPI f
 
 *   **Goal:** To build the `InterviewFormPage.vue` into a flexible engine capable of rendering complex surveys from a JSON schema.
 *   **Current Action:** The PPL data entry and PML data review workflows are now functionally complete. The form correctly renders and protects data based on user role and status.
-*   **Next Step:** Implement the PML's "Approve" and "Reject" actions. This involves creating new actions in the `formStore` that add the decision to the `syncEngine` queue, and updating the backend to handle these status changes.
+*   **Next Step:** Implement the PPL's repair cycle after an assignment is rejected by PML or Admin. This involves displaying rejection notes to the PPL and enabling them to edit and re-submit the assignment, as described in "Tahap 4: Siklus Perbaikan" of `alur-kerja.md`.
 
 ## Crucial Lessons Learned
 

@@ -23,6 +23,7 @@ class AssignmentResponse extends Model
         'submitted_by_ppl_at',
         'reviewed_by_pml_at',
         'reviewed_by_admin_at',
+        'notes',
     ];
 
     protected $casts = [

@@ -114,6 +114,14 @@ class SyncEngine {
               item.payload.notes // notes boleh opsional
             );
             break;
+          case 'revertApproval':
+            // Assuming payload contains { assignmentId, status, notes }
+            response = await apiClient.updateAssignmentStatus(
+              item.payload.assignmentId,
+              item.payload.status,
+              item.payload.notes
+            );
+            break;
 
           case 'uploadPhoto':
             // --- VALIDASI RUNTIME ---

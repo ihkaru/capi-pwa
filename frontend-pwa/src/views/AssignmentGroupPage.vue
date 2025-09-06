@@ -23,7 +23,7 @@
           <f7-list>
             <f7-list-item v-for="(count, status) in groupData.summary" :key="status" :title="status">
               <template #after>
-                <f7-badge :color="getStatusChipColor(status)">{{ count }}</f7-badge>
+                <f7-badge :color="getBadgeColorForStatus(status)">{{ count }}</f7-badge>
               </template>
             </f7-list-item>
           </f7-list>
@@ -43,6 +43,7 @@
 import { onMounted } from 'vue';
 import { f7 } from 'framework7-vue';
 import { useDashboardStore } from '../js/stores/dashboardStore';
+import { getBadgeColorForStatus } from '../js/utils/statusColors';
 
 const props = defineProps({
   f7route: Object,
@@ -60,14 +61,6 @@ onMounted(() => {
   }
   console.log(dashboardStore.groupedAssignments);
 });
-
-function getStatusChipColor(status: string) {
-  if (status === 'Submitted by PPL') return 'orange';
-  if (status === 'Approved by PML') return 'green';
-  if (status === 'Rejected by PML' || status === 'Rejected by Admin') return 'red';
-  if (status === 'Approved by Admin') return 'blue';
-  return 'gray';
-}
 
 function navigateToGroup(groupName: string) {
   const activityId = props.f7route?.params?.activityId;

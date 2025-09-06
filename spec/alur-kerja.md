@@ -121,6 +121,7 @@ Peran bersifat kontekstual dan diberikan kepada pengguna dalam lingkup `Kegiatan
     - Melihat daftar `Assignment` dari PPL-nya yang berstatus `Submitted by PPL` atau status lain yang relevan.
     - Membuka `Assignment Response` dalam mode baca-saja atau mode edit terbatas (sesuai `form_schema`).
     - Melakukan tindakan **Approve** atau **Reject** (dengan `notes` wajib diisi) langsung dari antarmuka PWA.
+    - Melakukan tindakan **Batalkan Persetujuan** (dengan `notes` opsional) untuk mengembalikan status `Approved by PML` menjadi `Submitted by PPL` jika terjadi kesalahan persetujuan.
 
 - **`PPL (Petugas Pencacah Lapangan)`**
   - **Tanggung Jawab:** Melakukan wawancara dan mengumpulkan data di lapangan sesuai `Assignment`.
@@ -187,6 +188,11 @@ Saat sebuah `Assignment` dibuat, `Assignment Response` baru juga dibuat secara o
   - PWA menampilkan modal yang **mewajibkan** PML untuk mengisi alasan penolakan (`notes`).
   - Di PWA, status `Assignment Response` diubah menjadi **`Rejected by PML`** dan `notes` disimpan.
   - Aksi "reject" ini dimasukkan ke dalam `sync_queue` PML.
+- **Skenario C: Batalkan Persetujuan (Koreksi Kesalahan):**
+  - PML menekan tombol "Batalkan Persetujuan" (Revert Approval).
+  - PWA menampilkan modal yang **opsional** bagi PML untuk mengisi alasan pembatalan (`notes`).
+  - Di PWA, status `Assignment Response` diubah menjadi **`Submitted by PPL`** dan `notes` disimpan.
+  - Aksi "batalkan persetujuan" ini dimasukkan ke dalam `sync_queue` PML.
 
 5.  **Sinkronisasi Keputusan:** Saat perangkat PML online, `SyncEngine` mengirimkan keputusan (approve/reject) ke server. Server memvalidasi (memastikan PML berwenang) dan memperbarui `status` di database.
 

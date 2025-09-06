@@ -21,6 +21,10 @@
           @click="() => handlePmlAction('reject')">
           <f7-icon f7="xmark"></f7-icon>
         </f7-fab-button>
+        <f7-fab-button v-if="isPmlMode && allowedActions.includes('REVERT_APPROVAL')" label="Batalkan Persetujuan" color="orange"
+          @click="handleRevertApproval">
+          <f7-icon f7="arrow_uturn_left"></f7-icon>
+        </f7-fab-button>
       </f7-fab-buttons>
     </f7-fab>
 
@@ -251,6 +255,7 @@ import { ref, computed, onMounted, watch, nextTick } from 'vue';
 import { f7, f7Icon } from 'framework7-vue';
 import { useFormStore } from '@/js/stores/formStore';
 import { useAuthStore } from '@/js/stores/authStore';
+import { useUiStore } from '@/js/stores/uiStore';
 import { debounce } from 'lodash-es';
 import { Geolocation } from '@capacitor/geolocation';
 import RosterList from '@/components/RosterList.vue';
@@ -262,6 +267,7 @@ const props = defineProps({ assignmentId: String });
 
 const formStore = useFormStore();
 const authStore = useAuthStore();
+const uiStore = useUiStore();
 const currentPageIndex = ref(0);
 const summaryPopupOpened = ref(false);
 const summarySheetOpened = ref(false);
@@ -378,18 +384,53 @@ async function fetchAllowedActions() {
 
 function handlePmlAction(actionType: 'approve' | 'reject') {
   if (actionType === 'reject') {
-    f7.dialog.prompt('Mohon masukkan alasan penolakan', 'Konfirmasi Tolak', (notes) => {
-      if (!notes) {
-        f7.toast.show({ text: 'Alasan penolakan wajib diisi.', position: 'bottom' });
-        return;
+    f7.dialog.prompt('Mohon masukkan alasan penolakan (opsional)', 'Konfirmasi Tolak', async (notes) => {
+      try {
+        f7.dialog.preloader('Menolak...');
+        await formStore.rejectAssignment(notes);
+        f7.dialog.close();
+        uiStore.setShouldTriggerAssignmentListSync(true);
+        f7.toast.show({ text: 'Formulir berhasil ditolak dan masuk antrean sinkronisasi!', closeTimeout: 3000 });
+        f7.views.main.router.back();
+      } catch (error) {
+        f7.dialog.close();
+        console.error('Failed to reject assignment:', error);
+        f7.dialog.alert('Gagal melakukan penolakan. Silakan coba lagi.', 'Error');
       }
-      console.log('Rejected with notes:', notes);
     });
   } else {
-    f7.dialog.confirm('Apakah Anda yakin ingin menyetujui data ini?', 'Konfirmasi Setuju', () => {
-      console.log('Approved');
+    f7.dialog.confirm('Apakah Anda yakin ingin menyetujui data ini?', 'Konfirmasi Setuju', async () => {
+      try {
+        f7.dialog.preloader('Menyetujui...');
+        await formStore.approveAssignment();
+        f7.dialog.close();
+        uiStore.setShouldTriggerAssignmentListSync(true);
+        f7.toast.show({ text: 'Formulir berhasil disetujui dan masuk antrean sinkronisasi!', closeTimeout: 3000 });
+        f7.views.main.router.back();
+      } catch (error) {
+        f7.dialog.close();
+        console.error('Failed to approve assignment:', error);
+        f7.dialog.alert('Gagal melakukan persetujuan. Silakan coba lagi.', 'Error');
+      }
     });
   }
+}
+
+async function handleRevertApproval() {
+  f7.dialog.prompt('Mohon masukkan alasan pembatalan persetujuan (opsional)', 'Batalkan Persetujuan', async (notes) => {
+    try {
+      f7.dialog.preloader('Membatalkan persetujuan...');
+      await formStore.revertApproval(notes);
+      f7.dialog.close();
+      uiStore.setShouldTriggerAssignmentListSync(true);
+      f7.toast.show({ text: 'Persetujuan berhasil dibatalkan dan masuk antrean sinkronisasi!', closeTimeout: 3000 });
+      f7.views.main.router.back();
+    } catch (error) {
+      f7.dialog.close();
+      console.error('Failed to revert approval:', error);
+      f7.dialog.alert('Gagal membatalkan persetujuan. Silakan coba lagi.', 'Error');
+    }
+  });
 }
 
 function findQuestionPage(questionId: string): number {
@@ -431,7 +472,7 @@ onMounted(() => {
   }
   if (authStore.activeRole === 'PML') {
     isPmlMode.value = true;
-    // fetchAllowedActions(); // TODO: Re-enable when backend route is available
+    fetchAllowedActions();
   }
 });
 
@@ -511,6 +552,7 @@ function submitForm() {
       f7.dialog.preloader('Submitting...');
       await formStore.submitAssignment();
       f7.dialog.close();
+      uiStore.setShouldTriggerAssignmentListSync(true);
       f7.toast.show({ text: 'Formulir berhasil di-submit dan masuk antrean sinkronisasi!', closeTimeout: 3000 });
       f7.views.main.router.back();
     } catch (error) {

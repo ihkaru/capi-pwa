@@ -191,5 +191,41 @@ class ActivityController extends Controller
             return response()->json(['message' => 'An error occurred during submission.'], 500);
         }
     }
+
+    public function getAllowedActions(Request $request, $assignmentId)
+    {
+        $user = $request->user();
+        Log::info('getAllowedActions: User ID: ' . $user->id . ', Roles: ' . implode(', ', $user->getRoleNames()->toArray()));
+
+        $assignment = Assignment::with('response', 'kegiatanStatistik.members')
+                                ->where('id', $assignmentId)
+                                ->firstOrFail();
+
+        Log::info('getAllowedActions: Assignment ID: ' . $assignment->id);
+        Log::info('getAllowedActions: Assignment Status: ' . ($assignment->response ? $assignment->response->status : 'No Response'));
+        Log::info('getAllowedActions: KegiatanStatistik ID: ' . ($assignment->kegiatanStatistik ? $assignment->kegiatanStatistik->id : 'NULL'));
+        Log::info('getAllowedActions: KegiatanStatistik Members Count: ' . ($assignment->kegiatanStatistik && $assignment->kegiatanStatistik->members ? $assignment->kegiatanStatistik->members->count() : 'NULL'));
+        Log::info('getAllowedActions: User is PML: ' . ($user->hasRole('PML') ? 'true' : 'false'));
+        Log::info('getAllowedActions: User is member of activity: ' . ($assignment->kegiatanStatistik && $assignment->kegiatanStatistik->members->contains('id', $user->id) ? 'true' : 'false'));
+
+        // Explicit authorization check
+        if (!$user->hasRole('PML') || !$assignment->kegiatanStatistik->members->contains('id', $user->id)) {
+            abort(403, 'Anda tidak memiliki izin untuk melihat aksi yang diizinkan.');
+        }
+
+        $allowedActions = [];
+
+        // Check assignment response status
+        if ($assignment->response) {
+            if ($assignment->response->status === 'Submitted by PPL') {
+                $allowedActions[] = 'APPROVE';
+                $allowedActions[] = 'REJECT';
+            } elseif ($assignment->response->status === 'Approved by PML') {
+                $allowedActions[] = 'REVERT_APPROVAL';
+            }
+        }
+
+        return response()->json($allowedActions);
+    }
 }
 
