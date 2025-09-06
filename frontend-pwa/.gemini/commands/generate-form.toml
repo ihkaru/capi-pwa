@@ -1,5 +1,4 @@
-# Perintah untuk menghasilkan komponen form engine (VERSI REFACTOR).
-description = "Generate the complete, dynamic Form Engine component, now with support for read-only prefilled data and online-aware action buttons for PMLs."
+description = "Generate the complete, dynamic Form Engine component, now with support for read-only prefilled data, online-aware action buttons for PMLs, and PPL's repair cycle for rejected assignments."
 
 prompt = """
 Generate a Vue 3 component file located at `src/views/InterviewFormPage.vue`. This component must function as a **generic and reusable Form Engine** driven entirely by a `formSchema` prop.
@@ -37,6 +36,8 @@ Generate a Vue 3 component file located at `src/views/InterviewFormPage.vue`. Th
   - Introduce a new question `type: "prefilled_display"`.
   - This type will be rendered as a **read-only** `<f7-list-input>` or simple text block.
   - Its value should be read directly from `assignmentData.value.prefilled_data` based on a key in the question's schema. It is **NOT** part of the `formState.responses` object.
+- **(BARU) Tampilan Catatan Penolakan:**
+  - Jika status assignment adalah `Rejected by PML` atau `Rejected by Admin`, tampilkan catatan penolakan (`assignmentData.value.notes`) secara jelas kepada PPL.
 
 **4. Logika Aksi & Tombol (Sangat Diperbarui):**
 - The `<template>` must display different action buttons at the bottom based on the mode.
@@ -47,6 +48,7 @@ Generate a Vue 3 component file located at `src/views/InterviewFormPage.vue`. Th
   - A block of buttons that are rendered conditionally using `v-for="action in allowedActions"`.
   - Example: `<f7-button v-if="allowedActions.includes('APPROVE')" @click="handlePmlAction('approve')">Approve</f7-button>`.
   - `<f7-button v-if="allowedActions.includes('REJECT')" color="red" @click="handlePmlAction('reject')">Reject</f7-button>`.
+  - `<f7-button v-if="allowedActions.includes('REVERT_APPROVAL')" color="orange" @click="handleRevertApproval">Batalkan Persetujuan</f7-button>`.
   - If `allowedActions` is empty and the user is online, it could show a message "Memverifikasi aksi...". If offline, "Aksi tidak tersedia saat offline."
 - **Methods:**
   - `async function fetchAllowedActions()`:
@@ -54,8 +56,13 @@ Generate a Vue 3 component file located at `src/views/InterviewFormPage.vue`. Th
     - It must call `ApiClient.getAllowedActions(props.assignmentId)`.
     - On success, it populates `allowedActions.value`.
   - `async function handlePmlAction(actionType: 'approve' | 'reject')`:
-    - If 'reject', it must show a dialog (`f7.dialog.prompt`) to get the rejection `notes`. If the notes are empty, cancel the action.
+    - If 'reject', it must show a dialog (`f7.dialog.prompt`) to get the rejection `notes`. **Notes are now optional.**
     - Updates the assignment status locally (`Approved by PML` or `Rejected by PML`).
+    - Queues the action for upload via `OfflineService.queueForSync(...)`.
+    - Navigates back.
+  - `async function handleRevertApproval()`:
+    - Shows a dialog (`f7.dialog.prompt`) to get optional notes for reverting.
+    - Updates the assignment status locally to `Submitted by PPL`.
     - Queues the action for upload via `OfflineService.queueForSync(...)`.
     - Navigates back.
 
@@ -64,6 +71,7 @@ Generate a Vue 3 component file located at `src/views/InterviewFormPage.vue`. Th
   - The `watch` function now watches `formState.responses` specifically, and on change, saves the entire `assignmentData` object (which contains the updated responses) back to `OfflineService`.
 - **Role-Based Field Access:**
   - A field is disabled if `isPmlMode` is true, UNLESS the question schema's `editableBy` property includes the 'PML' role.
+  - **(BARU) Pembukaan Kunci untuk PPL:** Jika status assignment adalah `Rejected by PML` atau `Rejected by Admin`, form harus dapat diedit oleh PPL.
 
 **6. Arsitektur & Ketergantungan Lainnya (Tidak Berubah):**
 - Penggunaan Zod untuk validasi, penanganan master data, dll, tetap sama.
