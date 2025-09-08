@@ -2,9 +2,18 @@
   <f7-page @page:afterin="onPageAfterIn">
     <f7-navbar :title="groupName" back-link="Kembali">
       <f7-nav-right>
+        <f7-link icon-f7="search" searchbar-enable=".searchbar-assignments"></f7-link>
         <f7-link icon-f7="arrow_up_arrow_down_circle" @click="isSortPopupOpened = true"></f7-link>
         <f7-link icon-f7="line_horizontal_3_decrease_circle" @click="isFilterPopupOpened = true"></f7-link>
       </f7-nav-right>
+      <f7-searchbar
+        class="searchbar-assignments"
+        expandable
+        placeholder="Cari Penugasan"
+        :disable-button="!f7.device.aurora"
+        @input="searchQuery = $event.target.value"
+        @searchbar:clear="searchQuery = ''"
+      ></f7-searchbar>
     </f7-navbar>
 
     <f7-list strong-ios outline-ios dividers-ios accordion-list class="assignment-list">
@@ -12,13 +21,7 @@
         <div class="text-align-center" style="width: 100%;">Tidak ada penugasan yang sesuai dengan filter.</div>
       </f7-list-item>
 
-      <f7-list-item
-        v-for="assignment in processedAssignments"
-        :key="assignment.id"
-        accordion-item
-        swipeout
-        @click="handleOpenAssignment(assignment.id)"
-      >
+      <f7-list-item v-for="assignment in processedAssignments" :key="assignment.id" accordion-item swipeout>
         <template #title>
           <div class="item-title-row">
             <div v-for="col in defaultColumns" :key="col.key" class="title-cell">
@@ -28,7 +31,8 @@
           </div>
         </template>
         <f7-swipeout-actions right>
-          <f7-swipeout-button v-if="authStore.activeRole === 'PPL' && assignment.status === 'PENDING'" color="red" @click.stop="handleDeleteAssignment(assignment.id)">
+          <f7-swipeout-button v-if="authStore.activeRole === 'PPL' && assignment.status === 'PENDING'" color="red"
+            @click.stop="handleDeleteAssignment(assignment.id)">
             Hapus
           </f7-swipeout-button>
         </f7-swipeout-actions>
@@ -39,13 +43,19 @@
                 <span class="cell-label">{{ col.label }}:</span>
                 <span class="cell-value">{{ getDeepValue(assignment, col.key) }}</span>
               </div>
+              <!-- Tombol Buka dipindahkan ke sini -->
+              <div class="action-cell-accordion">
+                <f7-button small fill @click.stop="handleOpenAssignment(assignment.id)">Buka</f7-button>
+              </div>
             </div>
           </f7-block>
         </div>
       </f7-list-item>
     </f7-list>
 
-    <f7-fab position="right-bottom" slot="fixed" :if="dashboardStore.activity?.allow_new_assignments_from_pwa && authStore.activeRole === 'PPL'" @click="handleAddNewAssignment">
+    <f7-fab position="right-bottom" slot="fixed"
+      :if="dashboardStore.activity?.allow_new_assignments_from_pwa && authStore.activeRole === 'PPL'"
+      @click="handleAddNewAssignment">
       <f7-icon f7="plus"></f7-icon>
     </f7-fab>
 
@@ -58,12 +68,7 @@
           </f7-nav-right>
         </f7-navbar>
         <f7-list>
-          <f7-list-item
-            v-for="col in sortableColumns"
-            :key="col.key"
-            :title="col.label"
-            @click="applySort(col.key)"
-          >
+          <f7-list-item v-for="col in sortableColumns" :key="col.key" :title="col.label" @click="applySort(col.key)">
             <f7-icon f7="checkmark" v-if="sortConfig.key === col.key"></f7-icon>
           </f7-list-item>
         </f7-list>
@@ -72,7 +77,7 @@
 
     <!-- Filter Popup -->
     <f7-popup :opened="isFilterPopupOpened" @popup:closed="isFilterPopupOpened = false">
-       <f7-page>
+      <f7-page>
         <f7-navbar title="Filter">
           <f7-nav-right>
             <f7-link @click="applyFilters">Terapkan</f7-link>
@@ -81,25 +86,23 @@
         </f7-navbar>
         <f7-list>
           <div v-for="(filter, index) in activeFilters" :key="index">
-             <f7-list-item :title="getColDefinition(filter.key)?.label || 'Pilih Kolom'" smart-select>
-                <select v-model="filter.key">
-                  <option v-for="col in filterableColumns" :value="col.key" :key="col.key">{{col.label}}</option>
-                </select>
+            <f7-list-item :title="getColDefinition(filter.key)?.label || 'Pilih Kolom'" smart-select>
+              <select v-model="filter.key">
+                <option v-for="col in filterableColumns" :value="col.key" :key="col.key">{{ col.label }}</option>
+              </select>
             </f7-list-item>
             <f7-list-input
               v-if="getColDefinition(filter.key)?.type === 'string' || getColDefinition(filter.key)?.type === 'number'"
-              label="Nilai"
-              type="text"
+              label="Nilai" type="text"
               :placeholder="'Masukkan nilai untuk \'' + (getColDefinition(filter.key)?.label || '') + '\''"
-              v-model:value="filter.value"
-            ></f7-list-input>
-             <f7-list-item v-if="getColDefinition(filter.key)?.type === 'status_lookup'" title="Status" smart-select>
-                <select v-model="filter.value">
-                  <option value="Assigned">Assigned</option>
-                  <option value="Submitted by PPL">Submitted by PPL</option>
-                  <option value="Approved by PML">Approved by PML</option>
-                  <option value="Rejected by PML">Rejected by PML</option>
-                </select>
+              v-model:value="filter.value"></f7-list-input>
+            <f7-list-item v-if="getColDefinition(filter.key)?.type === 'status_lookup'" title="Status" smart-select>
+              <select v-model="filter.value">
+                <option value="Assigned">Assigned</option>
+                <option value="Submitted by PPL">Submitted by PPL</option>
+                <option value="Approved by PML">Approved by PML</option>
+                <option value="Rejected by PML">Rejected by PML</option>
+              </select>
             </f7-list-item>
           </div>
           <f7-button @click="addFilter">Tambah Filter</f7-button>
@@ -111,7 +114,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue';
+import { ref, computed, watch } from 'vue';
 import { f7 } from 'framework7-vue';
 import { useDashboardStore } from '../js/stores/dashboardStore';
 import { useUiStore } from '../js/stores/uiStore';
@@ -130,6 +133,7 @@ const authStore = useAuthStore();
 
 const isSortPopupOpened = ref(false);
 const isFilterPopupOpened = ref(false);
+const searchQuery = ref('');
 
 const sortConfig = ref<{ key: string | null; direction: 'asc' | 'desc' }>({ key: null, direction: 'asc' });
 const activeFilters = ref<{ key: string; value: any; }[]>([]);
@@ -150,26 +154,26 @@ const otherColumns = computed(() => columns.value.filter(c => !c.default));
 const sortableColumns = computed(() => columns.value.filter(c => c.sortable));
 const filterableColumns = computed(() => columns.value.filter(c => c.filterable));
 
+const processedAssignments = ref<Assignment[]>([]);
+
 const getColDefinition = (key: string) => columns.value.find(c => c.key === key);
 
-const processedAssignments = computed(() => {
-  // Detailed Debugging Logs
-  console.log('[CAPI-DEBUG] Full columns array received:', JSON.stringify(columns.value, null, 2));
-  console.log('[CAPI-DEBUG] Filtered default columns:', JSON.stringify(defaultColumns.value, null, 2));
-
-  if (assignmentsInGroup.value.length > 0 && defaultColumns.value.length > 0) {
-    const firstAsg = assignmentsInGroup.value[0];
-    const firstColKey = defaultColumns.value[0].key;
-    console.log(`[CAPI-DEBUG] Testing getDeepValue on first assignment with key '${firstColKey}':`, getDeepValue(firstAsg, firstColKey));
-  }
-  // End Detailed Debugging Logs
-
-  console.log('[CAPI-DEBUG] Rendering processedAssignments. Columns available:', columns.value?.length);
-  console.log('[CAPI-DEBUG] Raw assignments in group:', assignmentsInGroup.value?.length, assignmentsInGroup.value?.[0]);
-
+function refreshAssignments() {
+  console.log('[CAPI-DEBUG] Refreshing assignments list...');
   let assignments = [...assignmentsInGroup.value];
 
-  // Filtering
+  // Search Query Filtering
+  if (searchQuery.value && searchQuery.value.trim() !== '') {
+    const lowerCaseQuery = searchQuery.value.trim().toLowerCase();
+    assignments = assignments.filter(assignment => {
+      return filterableColumns.value.some(col => {
+        const value = getDeepValue(assignment, col.key);
+        return String(value).toLowerCase().includes(lowerCaseQuery);
+      });
+    });
+  }
+
+  // Advanced Filtering
   if (activeFilters.value.length > 0) {
     assignments = assignments.filter(assignment => {
       return activeFilters.value.every(filter => {
@@ -205,9 +209,12 @@ const processedAssignments = computed(() => {
       return 0;
     });
   }
+  console.log(`[CAPI-DEBUG] Refresh complete. Displaying ${assignments.length} assignments.`);
+  processedAssignments.value = assignments;
+}
 
-  console.log('[CAPI-DEBUG] Final processed assignments count:', assignments.length);
-  return assignments;
+watch(searchQuery, () => {
+  refreshAssignments();
 });
 
 function getDeepValue(obj: any, path: string) {
@@ -226,6 +233,9 @@ async function handleDeleteAssignment(assignmentId: string) {
 }
 
 function onPageAfterIn() {
+  console.log('[CAPI-DEBUG] Page is now active. Refreshing assignments.');
+  refreshAssignments();
+
   const currentActivityId = dashboardStore.activity?.id;
   if (!currentActivityId) return;
 
@@ -245,6 +255,7 @@ function applySort(key: string) {
     sortConfig.value.direction = 'asc';
   }
   isSortPopupOpened.value = false;
+  refreshAssignments();
 }
 
 function addFilter() {
@@ -255,11 +266,13 @@ function applyFilters() {
   // remove empty filters
   activeFilters.value = activeFilters.value.filter(f => f.key && f.value);
   isFilterPopupOpened.value = false;
+  refreshAssignments();
 }
 
 function resetFilters() {
   activeFilters.value = [];
   isFilterPopupOpened.value = false;
+  refreshAssignments();
 }
 
 function handleAddNewAssignment() {
@@ -336,6 +349,14 @@ function handleAddNewAssignment() {
 
 .title-cell:last-child {
   padding-right: 0;
+}
+
+.action-cell-accordion {
+  display: flex;
+  justify-content: flex-end;
+  /* Posisikan tombol ke kanan */
+  padding-top: 16px;
+  /* Beri jarak dari konten di atasnya */
 }
 
 .cell-label {

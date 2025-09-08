@@ -172,3 +172,10 @@ The assignment list will be rendered as an "accordion table" to accommodate a la
 -   To enhance usability, user preferences for the assignment list will be stored locally.
 -   This includes which columns are toggled for the default view and the current sort order.
 -   These preferences will be saved in the `app_metadata` table in IndexedDB, keyed by the activity ID, ensuring they persist between sessions for each specific activity.
+
+### 6.6. Search
+
+-   To provide quick access, a real-time search functionality is implemented directly on the `AssignmentListPage`.
+-   **UI:** A search icon in the navbar enables an expandable search bar.
+-   **Logic:** The search is performed client-side as the user types. It is case-insensitive and matches the search term against the values of all columns marked as `"filterable": true` in the `form_schema`.
+-   This allows users to rapidly find assignments by typing any relevant information, such as a family name, status, or any other data point made filterable in the schema.

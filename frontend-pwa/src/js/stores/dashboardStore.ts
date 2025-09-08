@@ -97,25 +97,19 @@ export const useDashboardStore = defineStore('dashboard', () => {
 
   async function loadDashboardData(activityId: string) {
     if (!currentUserId.value) return;
-    console.log(`LOG: [dashboardStore] loadDashboardData: Loading data from DexieDB for activityId: ${activityId}`);
     try {
       const user = currentUserId.value;
       activity.value = await activityDB.activities.where({ id: activityId, user_id: user }).first() || null;
-      console.log('[CAPI-DEBUG] Activity object loaded from DB:', JSON.stringify(activity.value, null, 2));
 
       formSchema.value = await activityDB.formSchemas.where({ activity_id: activityId, user_id: user }).first() || null;
-      console.log('[CAPI-DEBUG] formSchema object loaded from DB:', JSON.stringify(formSchema.value, null, 2));
-
 
       // Attach schema to activity object for unified access
       if (activity.value && formSchema.value) {
         activity.value.form_schema = formSchema.value.schema;
-        console.log('[CAPI-DEBUG] Schema successfully attached to activity object.');
-      } else {
-        console.log('[CAPI-DEBUG] Schema attachment SKIPPED (activity or formSchema is null).');
       }
       const allAssignments = await activityDB.assignments.where({ activity_id: activityId, user_id: user }).toArray();
-      const responses = await activityDB.assignmentResponses.where({ user_id: user }).toArray();
+      const assignmentIds = allAssignments.map(a => a.id);
+      const responses = await activityDB.assignmentResponses.where('assignment_id').anyOf(assignmentIds).toArray();
       const responsesMap = new Map(responses.map(r => [r.assignment_id, r]));
 
       const combinedAssignments = allAssignments.map(asm => ({
@@ -184,10 +178,8 @@ export const useDashboardStore = defineStore('dashboard', () => {
       f7.dialog.preloader('Full Sync...');
       try {
         const user = currentUserId.value;
-        console.log(`[syncFull] Starting syncFull for activityId: ${activityId}, userId: ${user}`);
 
         // 1. Preserve PENDING assignments
-        console.log('[syncFull] Querying for PENDING assignments to preserve...');
         const pendingAssignments = await activityDB.assignments
           .where({ activity_id: activityId, user_id: user, status: 'PENDING' })
           .toArray();
@@ -197,24 +189,16 @@ export const useDashboardStore = defineStore('dashboard', () => {
           pendingResponses = await activityDB.assignmentResponses
             .where('assignment_id').anyOf(pendingIds)
             .toArray();
-          console.log(`[syncFull] Found ${pendingAssignments.length} PENDING assignments to preserve:`, pendingAssignments.map(a => a.id));
-          console.log('[syncFull] Raw PENDING assignments array:', pendingAssignments.map(a => ({ id: a.id, status: a.status, activity_id: a.activity_id, user_id: a.user_id })));
-        } else {
-          console.log(`[syncFull] No PENDING assignments found to preserve.`);
         }
 
         // 2. Fetch fresh data from server BEFORE starting the transaction
-        console.log(`[syncFull] Fetching initial data from server for activity ${activityId}...`);
         const initialData = await apiClient.getInitialData(activityId, false);
-        console.log(`[CAPI-DEBUG] Form schema received from API inside syncFull:`, JSON.stringify(initialData.form_schema, null, 2));
-        console.log(`[syncFull] Successfully fetched initial data from server. Assignments received: ${initialData.assignments.length}`);
 
         // 3. Use a single transaction for the entire operation
         await activityDB.transaction('rw', 
           [activityDB.activities, activityDB.assignments, activityDB.assignmentResponses, activityDB.formSchemas, activityDB.masterData, activityDB.masterSls],
           async () => {
             // 3a. Clear all existing data for this activity
-            console.log(`[syncFull] Starting transaction: Clearing old data for activity ${activityId}...`);
             const assignmentCollection = activityDB.assignments.where({ activity_id: activityId, user_id: user });
             const assignmentIds = await assignmentCollection.primaryKeys();
             await assignmentCollection.delete();
@@ -225,7 +209,6 @@ export const useDashboardStore = defineStore('dashboard', () => {
             await activityDB.masterData.where({ activity_id: activityId, user_id: user }).delete();
             
             // Save fresh server data
-            console.log(`[syncFull] Storing fresh data from server...`);
             await activityDB.activities.put({ ...initialData.activity, user_id: user });
             await activityDB.formSchemas.put({ activity_id: activityId, user_id: user, schema: initialData.form_schema });
             if (initialData.master_data?.length > 0) {
@@ -240,7 +223,6 @@ export const useDashboardStore = defineStore('dashboard', () => {
             if (initialData.assignmentResponses?.length > 0) {
               await activityDB.assignmentResponses.bulkPut(initialData.assignmentResponses);
             }
-            console.log(`[syncFull] Stored ${assignmentsToStore.length} assignments and ${initialData.assignmentResponses?.length || 0} responses from server.`);
 
             // Re-add the preserved PENDING assignments and responses
             if (pendingAssignments.length > 0) {
@@ -248,14 +230,10 @@ export const useDashboardStore = defineStore('dashboard', () => {
                 const plainPendingResponses = JSON.parse(JSON.stringify(pendingResponses));
                 await activityDB.assignments.bulkPut(plainPendingAssignments);
                 await activityDB.assignmentResponses.bulkPut(plainPendingResponses);
-                console.log(`[syncFull] Re-added ${pendingAssignments.length} PENDING assignments and responses to Dexie.`);
-            } else {
-              console.log(`[syncFull] No PENDING assignments to re-add.`);
             }
         });
 
         // Reload store from local DB to reflect the changes
-        console.log(`[syncFull] Transaction complete. Reloading dashboard data from local DB...`);
         await loadDashboardData(activityId);
 
         f7.toast.show({ text: 'Full sync successful!', cssClass: 'success-toast', position: 'bottom', closeTimeout: 3000 });
@@ -367,8 +345,6 @@ export const useDashboardStore = defineStore('dashboard', () => {
       assignment: plainAssignment,
       assignmentResponse: plainResponse,
     });
-
-    console.log('New assignment created locally and queued for sync:', newAssignment.id);
   }
 
   function reset() {
@@ -454,8 +430,9 @@ export const useDashboardStore = defineStore('dashboard', () => {
     updateAssignmentInState(updatedAssignment: Assignment) {
       const index = assignments.value.findIndex(a => a.id === updatedAssignment.id);
       if (index !== -1) {
-        assignments.value[index] = updatedAssignment;
-        console.log(`[dashboardStore] Updated assignment ${updatedAssignment.id} in state.`);
+        assignments.value.splice(index, 1, updatedAssignment);
+      } else {
+        console.warn(`[CAPI-WARN] dashboardStore: Did not find assignment ${updatedAssignment.id} in state to update.`);
       }
     },
   };

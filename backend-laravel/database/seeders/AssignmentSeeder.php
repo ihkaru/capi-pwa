@@ -105,7 +105,7 @@ class AssignmentSeeder extends Seeder
                         'timestamp' => now()->toISOString(),
                     ],
                 ];
-                $assignmentResponseData['responses'] = json_encode($responses);
+                $assignmentResponseData['responses'] = $responses;
 
                 // Randomly set some to Submitted by PPL
                 if ($faker->boolean(70)) { // 70% chance to be submitted

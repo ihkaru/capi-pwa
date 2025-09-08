@@ -315,7 +315,6 @@ export const useFormStore = defineStore('form', () => {
 
     async function saveResponsesToLocalDB() {
         if (state.value.assignmentResponse && state.value.assignment) {
-            console.log('[saveResponsesToLocalDB] About to save assignment. Current status is:', state.value.assignment.status);
             state.value.assignmentResponse.updated_at = new Date().toISOString();
             
             // Also update the parent assignment's updated_at timestamp
@@ -327,10 +326,13 @@ export const useFormStore = defineStore('form', () => {
             await activityDB.assignmentResponses.put(plainResponse);
             await activityDB.assignments.put(plainAssignment);
             
-            // Update dashboardStore state to ensure reactivity
-            dashboardStore.updateAssignmentInState(plainAssignment);
+            // --- FIX: Construct the combined object for the dashboard store ---
+            const combinedAssignmentForDashboard = {
+                ...plainAssignment,
+                response: plainResponse,
+            };
 
-            console.log('[CAPI-DEBUG] Saved to DB and updated dashboardStore state.');
+            dashboardStore.updateAssignmentInState(combinedAssignmentForDashboard);
         }
     }
 

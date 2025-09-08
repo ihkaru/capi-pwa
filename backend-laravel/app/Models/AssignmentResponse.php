@@ -38,11 +38,5 @@ class AssignmentResponse extends Model
         return $this->belongsTo(Assignment::class, 'assignment_id');
     }
 
-    // Accessor to ensure 'responses' is always an object
-    public function getResponsesAttribute($value)
-    {
-        $decoded = json_decode($value, true);
-        // Ensure it's always an associative array (object in JSON) or an empty object
-        return is_array($decoded) ? (object)$decoded : (object)[];
-    }
+    
 }

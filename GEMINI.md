@@ -111,7 +111,7 @@ We are building the **Platform Cerdas**, a full-stack statistical survey applica
 
 The application is stable and the core data pipeline is robust.
 
-*   **Dynamic and Interactive Assignment List:** The `AssignmentListPage` now features a dynamic, mobile-friendly accordion table. It renders columns based on the `form_schema`, supports client-side sorting and type-aware filtering, and provides a much richer data overview for both PPLs and PMLs.
+*   **Dynamic and Interactive Assignment List:** The `AssignmentListPage` now features a dynamic, mobile-friendly accordion table. It renders columns based on the `form_schema`, supports client-side sorting and type-aware filtering, and provides a much richer data overview for both PPLs and PMLs. The underlying data-flow and component logic have been hardened to be resilient against framework lifecycle quirks, ensuring data is always fresh. A real-time search feature has also been added.
 *   **Dynamic Form Engine (Functional Core):** The engine in `InterviewFormPage.vue` now correctly renders multiple question types based on a JSON schema, including `text`, `number`, `select`, `image`, and `geotag`.
 *   **Rosters (Repeating Groups):** The form engine now supports repeating groups of questions (rosters), including nested rosters, allowing for complex household or entity lists.
 *   **Advanced Logic Engine (Foundation):** A `logicEngine` service has been created to handle conditional logic. The `showIf` condition is now implemented and working, allowing questions to be dynamically shown or hidden.
@@ -134,14 +134,13 @@ The high-level roadmap remains the same, with our focus still on the main CAPI f
 ### **4. Current Multi-Session Focus: The Dynamic Form Engine**
 
 *   **Goal:** To build the `InterviewFormPage.vue` into a flexible engine capable of rendering complex surveys from a JSON schema.
-*   **Current Action:** The PPL data entry and PML data review workflows are now functionally complete. The form correctly renders and protects data based on user role and status. The PPL's repair cycle (displaying rejection notes, unlocking form, re-submission) is also considered complete.
-*   **New Feature Implementation:**
-    *   **"Sync Full with Preservation"**: Implemented logic to preserve locally created `PENDING` assignments during a full data refresh from the server.
-    *   **"PPL Delete Action"**: Implemented a swipe-to-delete action on `AssignmentListPage.vue` allowing PPLs to delete their own `PENDING` assignments.
-    *   **New Status `SUBMITTED_LOCAL`**: Introduced a new status to clearly distinguish assignments that are locally submitted but not yet synced to the server.
-*   **Current Challenge:** Despite the implemented logic, `PENDING` assignments are still not being preserved by the "Sync Full" operation. The `syncFull` function's query for `PENDING` assignments is returning empty, even when such assignments are known to exist in the local Dexie.js database. This is the current focus of debugging.
+*   **Current Action:** Added a real-time search feature to the `AssignmentListPage`. The dynamic list is now considered feature-complete and stable.
 
 ## Crucial Lessons Learned
+
+18. **State Reactivity vs. Component Lifecycle:**
+    *   **Mistake:** A list view (`AssignmentListPage`) was not updating consistently. Data changed in a form (`InterviewFormPage`) was correctly updated in the central Pinia store, but the list view would sometimes show stale data or fail to render new data upon navigation. The issue persisted even after confirming the store's state was 100% correct and that reactive updates (`splice`) were being used.
+    *   **Lesson:** Correct state management is not enough. A component's visual state also depends on its lifecycle hooks. In a complex framework like Framework7-Vue, a component may not fully re-render when navigated back to, even if underlying reactive data has changed. The solution was to stop relying on purely declarative computed properties for the list and instead adopt a more robust, event-driven approach. By explicitly rebuilding the component's local list data inside the `onPageAfterIn` lifecycle hook, we guarantee the view is always in sync with the latest state from the store, bypassing any framework-level caching or reactivity quirks.
 
 17. **Idempotent Seeders (`updateOrCreate` vs. `firstOrCreate`):**
     *   **Mistake:** A configuration-heavy `form_schema` in the database was not being updated when the seeder was re-run, even after the source JSON file was changed. This caused a frustrating, hard-to-diagnose bug where the frontend received a stale schema from the API.
