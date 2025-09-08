@@ -76,8 +76,8 @@ class AssignmentPhotoController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Photo uploaded successfully',
-            'photo_id' => $attachment->id, // Return the ID of the attachment
-            'url' => Storage::disk('public')->url($path),
+            'fileId' => $attachment->id, // Return the ID of the attachment
+            'filePath' => $path, // Return the relative path
         ]);
     }
 }

@@ -337,29 +337,71 @@ export const useFormStore = defineStore('form', () => {
     }
 
     async function submit() {
-        if (!state.value.assignment || !state.value.assignmentResponse || !authStore.user) {
+        if (!state.value.assignment || !state.value.assignmentResponse || !authStore.user || !state.value.formSchema) {
             throw new Error('Cannot submit, essential data is missing.');
         }
-
+    
         const isNew = state.value.isNew;
         const assignment = JSON.parse(JSON.stringify(state.value.assignment));
         const assignmentResponse = JSON.parse(JSON.stringify(state.value.assignmentResponse));
-        
-        if (isNew) {
-            assignmentResponse.status = 'SUBMITTED_LOCAL'; // New status for locally submitted but not yet synced
-            assignment.status = 'SUBMITTED_LOCAL'; // Also update assignment status for consistency in payload
-        } else {
-            assignmentResponse.status = 'Submitted by PPL'; // For existing assignments, status becomes 'Submitted by PPL'
+    
+        let localPhotoId = null;
+        let imageQuestionId = null;
+    
+        // For new assignments, check for an offline photo
+        if (isNew && state.value.formSchema.pages) {
+            for (const page of state.value.formSchema.pages) {
+                if (page.questions) {
+                    for (const question of page.questions) {
+                        if (question.type === 'image') {
+                            const responseValue = assignmentResponse.responses[question.id];
+                            if (responseValue && typeof responseValue === 'object' && responseValue.localId) {
+                                localPhotoId = responseValue.localId;
+                                imageQuestionId = question.id;
+                                // Clean the response object, leave nothing or a placeholder
+                                delete assignmentResponse.responses[question.id];
+                                break;
+                            }
+                        }
+                    }
+                }
+                if (localPhotoId) break;
+            }
         }
+    
         assignmentResponse.updated_at = new Date().toISOString();
+        if (isNew) {
+            assignmentResponse.status = 'SUBMITTED_LOCAL';
+            assignment.status = 'SUBMITTED_LOCAL';
+        } else {
+            assignmentResponse.status = 'Submitted by PPL';
+        }
         
         await activityDB.assignmentResponses.put(assignmentResponse);
-
-        await syncEngine.queueForSync(isNew ? 'createAssignment' : 'submitAssignment', {
-            assignment,
-            assignmentResponse,
-            activityId: assignment.kegiatan_statistik_id, // Add activityId for submitAssignment
-        });
+    
+        // If a new assignment has a photo, queue the special combined task
+        if (isNew && localPhotoId) {
+            await syncEngine.queueForSync('createAssignmentWithPhoto', {
+                assignment,
+                assignmentResponse,
+                localPhotoId: localPhotoId,
+                imageQuestionId: imageQuestionId, // Pass this to update the response later
+                activityId: assignment.kegiatan_statistik_id,
+            });
+        } else if (isNew) {
+            // New assignment, but no photo
+            await syncEngine.queueForSync('createAssignment', {
+                assignment,
+                assignmentResponse,
+                activityId: assignment.kegiatan_statistik_id,
+            });
+        } else {
+            // Existing assignment submission
+            await syncEngine.queueForSync('submitAssignment', {
+                assignmentResponse,
+                activityId: assignment.kegiatan_statistik_id,
+            });
+        }
     }
     
     return {

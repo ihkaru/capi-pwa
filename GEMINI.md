@@ -111,6 +111,7 @@ We are building the **Platform Cerdas**, a full-stack statistical survey applica
 
 The application is stable and the core data pipeline is robust.
 
+*   **Offline-First New Assignment with Photo (Fixed):** The workflow for creating a new assignment with a photo while offline is now fully functional. The system correctly saves the photo locally, queues a composite task in the sync engine, and processes the upload and creation dependently when online. The application state is now immediately consistent after a background sync, ensuring data integrity and a smooth user experience.
 *   **Dynamic and Interactive Assignment List:** The `AssignmentListPage` now features a dynamic, mobile-friendly accordion table. It renders columns based on the `form_schema`, supports client-side sorting and type-aware filtering, and provides a much richer data overview for both PPLs and PMLs. The underlying data-flow and component logic have been hardened to be resilient against framework lifecycle quirks, ensuring data is always fresh. A real-time search feature has also been added.
 *   **Dynamic Form Engine (Functional Core):** The engine in `InterviewFormPage.vue` now correctly renders multiple question types based on a JSON schema, including `text`, `number`, `select`, `image`, and `geotag`.
 *   **Rosters (Repeating Groups):** The form engine now supports repeating groups of questions (rosters), including nested rosters, allowing for complex household or entity lists.
@@ -137,6 +138,10 @@ The high-level roadmap remains the same, with our focus still on the main CAPI f
 *   **Current Action:** Added a real-time search feature to the `AssignmentListPage`. The dynamic list is now considered feature-complete and stable.
 
 ## Crucial Lessons Learned
+
+19. **Background Sync Must Update In-Memory State:**
+    *   **Mistake:** A background sync process (`SyncEngine`) correctly updated the persistent local database (IndexedDB) after a successful operation, but it failed to notify the live application. This created a state inconsistency where the UI continued to show stale data (e.g., an assignment status as "Pending" instead of "Submitted") until the user forced a full refresh, causing confusion and making items appear to vanish from lists.
+    *   **Lesson:** In an offline-first architecture, it is not enough for a background process to simply update the persistent storage. The background process **must also be responsible for updating the live, in-memory state** (e.g., the Pinia store). The fix was to have the `SyncEngine`, upon a successful sync, call a dedicated action (`upsertAssignment`) in the relevant Pinia store (`dashboardStore`) to push the new, server-confirmed state directly into the UI's reactive data source. This eliminates state inconsistencies and ensures the UI is always a correct reflection of the underlying data.
 
 18. **State Reactivity vs. Component Lifecycle:**
     *   **Mistake:** A list view (`AssignmentListPage`) was not updating consistently. Data changed in a form (`InterviewFormPage`) was correctly updated in the central Pinia store, but the list view would sometimes show stale data or fail to render new data upon navigation. The issue persisted even after confirming the store's state was 100% correct and that reactive updates (`splice`) were being used.

@@ -89,7 +89,7 @@ interface SyncResult {
 
 interface FileUploadResponse {
   success: boolean;
-  fileUrl?: string;
+  filePath?: string;
   fileId?: string;
   message?: string;
 }
@@ -431,17 +431,21 @@ class ApiClient {
    * Creates a new assignment from the PWA.
    * @param assignment The assignment object to create.
    * @param assignmentResponse The assignment response object to create.
-   * @param photo Base64 string of the photo, if any.
+   * @param photoId The ID of the pre-uploaded photo, if any.
    * @returns {Promise<any>} The response from the API.
    */
   public async createAssignment(
     assignment: any,
-    assignmentResponse: any
+    assignmentResponse: any,
+    photoId?: string | null
   ): Promise<any> {
-    const payload = {
+    const payload: any = {
       assignment: assignment,
       assignment_response: assignmentResponse,
     };
+    if (photoId) {
+      payload.photo_id = photoId;
+    }
     return this.axiosInstance.post(`/activities/${assignment.kegiatan_statistik_id}/assignments/create`, payload);
   }
 

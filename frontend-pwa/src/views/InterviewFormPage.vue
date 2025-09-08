@@ -260,7 +260,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch, nextTick } from 'vue';
+import { ref, computed, onMounted, watch, nextTick, onUnmounted } from 'vue';
 import { f7, f7Icon, f7BlockContent } from 'framework7-vue';
 import { useFormStore } from '@/js/stores/formStore';
 import { useAuthStore } from '@/js/stores/authStore';
@@ -271,6 +271,7 @@ import RosterList from '@/components/RosterList.vue';
 import { executeLogic } from '@/js/services/logicEngine';
 import ApiClient from '@/js/services/ApiClient';
 import GeotagPreview from '@/components/GeotagPreview.vue';
+import { activityDB } from '@/js/services/offline/ActivityDB';
 
 const props = defineProps({ f7route: Object });
 
@@ -282,6 +283,7 @@ const summaryPopupOpened = ref(false);
 const summarySheetOpened = ref(false);
 const imageInputs = ref({});
 const visibleSummaryCategory = ref('');
+const localPreviewUrls = ref(new Map<string, string>());
 
 const isPmlMode = ref(false);
 const allowedActions = ref([]);
@@ -298,13 +300,25 @@ const getApiRoot = () => {
   return apiUrl.replace('/api', '');
 }
 
-const getImageSrc = (value: string | null) => {
+const getImageSrc = (value: any) => {
   if (!value) return '';
-  if (value.startsWith('data:image')) {
+
+  // Handle offline, locally captured images
+  if (typeof value === 'object' && value.previewUrl) {
+    return value.previewUrl;
+  }
+
+  // Handle synced images (value is the stored path)
+  if (typeof value === 'string' && !value.startsWith('data:image')) {
+    return `${getApiRoot()}/storage/${value}`;
+  }
+
+  // Fallback for old base64 data for backward compatibility
+  if (typeof value === 'string' && value.startsWith('data:image')) {
     return value;
   }
-  // Assuming the value is a relative path from the storage root, e.g., 'photos/uuid.jpg'
-  return `${getApiRoot()}/storage/${value}`;
+
+  return '';
 };
 
 const currentPage = computed(() => {
@@ -483,6 +497,12 @@ function onPageAfterIn() {
   // Placeholder for now
 }
 
+function onPageBeforeOut() {
+  // Revoke all local preview URLs to prevent memory leaks
+  localPreviewUrls.value.forEach(url => URL.revokeObjectURL(url));
+  localPreviewUrls.value.clear();
+}
+
 onMounted(() => {
   const routePath = props.f7route?.path;
   const queryAssignmentId = props.f7route?.query?.assignmentId; // 'new' for new assignments
@@ -523,6 +543,10 @@ onMounted(() => {
   }
 });
 
+onUnmounted(() => {
+  onPageBeforeOut(); // Ensure cleanup on component destruction
+});
+
 // Since v-model updates the store directly, the watcher on responses
 // will trigger the debounced save automatically.
 const debouncedSave = debounce(() => {
@@ -540,20 +564,40 @@ function openCamera(questionId: string) {
 
 async function handleFileSelected(questionId: string, event: Event) {
   const target = event.target as HTMLInputElement;
-  if (target.files && target.files[0]) {
-    const file = target.files[0];
-    const base64Data = await fileToBase64(file);
-    formStore.updateResponse(questionId, base64Data);
-  }
-}
+  if (!target.files || !target.files[0]) return;
 
-function fileToBase64(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.readAsDataURL(file);
-    reader.onload = () => resolve(reader.result as string);
-    reader.onerror = (error) => reject(error);
-  });
+  const file = target.files[0];
+  const userId = authStore.user?.id;
+
+  if (!userId) {
+      f7.dialog.alert('Tidak dapat menyimpan foto: pengguna tidak terautentikasi.', 'Error');
+      return;
+  }
+
+  try {
+    const localPhotoId = crypto.randomUUID();
+    const photoBlob = {
+        id: localPhotoId,
+        user_id: userId,
+        blob: file
+    };
+
+    await activityDB.photoBlobs.add(photoBlob);
+
+    const previewUrl = URL.createObjectURL(file);
+    localPreviewUrls.value.set(questionId, previewUrl);
+
+    formStore.updateResponse(questionId, { 
+        localId: localPhotoId, 
+        previewUrl: previewUrl 
+    });
+
+    f7.toast.show({ text: 'Foto berhasil disimpan secara lokal!', closeTimeout: 2000 });
+
+  } catch (error) {
+      console.error('Gagal menyimpan foto secara lokal:', error);
+      f7.dialog.alert('Gagal menyimpan foto secara lokal.', 'Error Penyimpanan');
+  }
 }
 
 async function handleGeotagCapture(questionId: string) {

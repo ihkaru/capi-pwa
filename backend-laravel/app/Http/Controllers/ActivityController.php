@@ -152,6 +152,7 @@ class ActivityController extends Controller
     public function submitAssignments(Request $request, $activityId)
     {
         $user = $request->user();
+        Log::info('submitAssignments: Received payload:', $request->all());
 
         $validator = Validator::make($request->all(), [
             '*.assignment_id' => 'required|string|exists:assignments,id',
@@ -161,6 +162,7 @@ class ActivityController extends Controller
         ]);
 
         if ($validator->fails()) {
+            Log::error('submitAssignments: Validation failed.', $validator->errors()->toArray());
             return response()->json($validator->errors(), 422);
         }
 
@@ -239,10 +241,12 @@ class ActivityController extends Controller
 
     public function createAssignment(Request $request, $activityId)
     {
-        Log::info('createAssignment: Method started.');
+        Log::info('[TIMING] createAssignment: Method started.', ['time' => microtime(true)]);
+        DB::reconnect(); // Reconnect to the database to prevent timeouts
         $user = $request->user();
 
         // 1. Validate incoming data
+        Log::info('[TIMING] createAssignment: Starting validation.', ['time' => microtime(true)]);
         $validator = Validator::make($request->all(), [
             'assignment.id' => 'required|string|uuid',
             'assignment.kegiatan_statistik_id' => 'required|string|uuid|exists:kegiatan_statistiks,id',
@@ -265,11 +269,11 @@ class ActivityController extends Controller
             'assignment.level_4_code_full' => 'required|string',
             'assignment.level_6_code_full' => 'nullable|string',
             'assignment.prefilled_data' => 'nullable|array',
-            'assignment.status' => 'required|string|in:Assigned',
+            'assignment.status' => 'required|string',
 
             'assignment_response.assignment_id' => 'required|string|uuid',
             'assignment_response.user_id' => 'required|string|uuid',
-            'assignment_response.status' => 'required|string|in:Assigned',
+            'assignment_response.status' => 'required|string',
             'assignment_response.version' => 'required|integer',
             'assignment_response.form_version_used' => 'required|integer',
             'assignment_response.responses' => 'nullable|array',
@@ -281,14 +285,13 @@ class ActivityController extends Controller
             Log::error('Create Assignment Validation Failed:', $validator->errors()->toArray());
             return response()->json($validator->errors(), 422);
         }
-        Log::info('createAssignment: Validation passed.');
+        Log::info('[TIMING] createAssignment: Validation passed.', ['time' => microtime(true)]);
 
         $validated = $validator->validated();
 
-        Log::info('createAssignment: Starting DB transaction.');
+        Log::info('[TIMING] createAssignment: Starting DB transaction.', ['time' => microtime(true)]);
         DB::beginTransaction();
         try {
-            Log::info('createAssignment: Transaction started.');
             $kegiatanStatistik = KegiatanStatistik::where('id', $activityId)->firstOrFail();
 
             // 2. Enforce allow_new_assignments_from_pwa check
@@ -306,42 +309,40 @@ class ActivityController extends Controller
             }
 
             // Create Assignment record
-            Log::info('createAssignment: Creating Assignment record.');
             $assignment = new Assignment($validated['assignment']);
             $assignment->id = $validated['assignment']['id']; // Ensure UUID is used
             $assignment->prefilled_data = $validated['assignment']['prefilled_data'] ?? [];
 
             
 
-            Log::info('createAssignment: Saving Assignment record.');
+            Log::info('[TIMING] createAssignment: Saving Assignment record.', ['time' => microtime(true)]);
             $assignment->save();
-            Log::info('createAssignment: Assignment record saved.');
+            Log::info('[TIMING] createAssignment: Assignment record saved.', ['time' => microtime(true)]);
 
             // Create AssignmentResponse record
-            Log::info('createAssignment: Creating AssignmentResponse record.');
             $assignmentResponse = new AssignmentResponse($validated['assignment_response']);
             $assignmentResponse->assignment_id = $validated['assignment_response']['assignment_id']; // Ensure UUID is used
             $assignmentResponse->responses = $validated['assignment_response']['responses'] ?? [];
             $assignmentResponse->status = 'Submitted by PPL'; // Set status to Submitted by PPL on successful creation
             $assignmentResponse->submitted_by_ppl_at = now();
-            Log::info('createAssignment: Saving AssignmentResponse record.');
+            Log::info('[TIMING] createAssignment: Saving AssignmentResponse record.', ['time' => microtime(true)]);
             $assignmentResponse->save();
-            Log::info('createAssignment: AssignmentResponse record saved.');
+            Log::info('[TIMING] createAssignment: AssignmentResponse record saved.', ['time' => microtime(true)]);
 
             // If photo_id is present, link the AssignmentAttachment
             if (!empty($validated['photo_id'])) {
-                Log::info('createAssignment: Linking AssignmentAttachment.');
+                Log::info('[TIMING] createAssignment: Linking AssignmentAttachment.', ['time' => microtime(true)]);
                 $attachment = \App\Models\AssignmentAttachment::find($validated['photo_id']);
                 if ($attachment) {
                     $attachment->assignment_id = $assignment->id;
                     $attachment->save();
-                    Log::info('createAssignment: AssignmentAttachment linked and saved.');
+                    Log::info('[TIMING] createAssignment: AssignmentAttachment linked and saved.', ['time' => microtime(true)]);
                 }
             }
 
-            Log::info('createAssignment: Committing DB transaction.');
+            Log::info('[TIMING] createAssignment: Committing DB transaction.', ['time' => microtime(true)]);
             DB::commit();
-            Log::info('createAssignment: Transaction committed.');
+            Log::info('[TIMING] createAssignment: Transaction committed.', ['time' => microtime(true)]);
 
             return response()->json(['message' => 'Assignment created successfully', 'assignment_id' => $assignment->id], 201);
 

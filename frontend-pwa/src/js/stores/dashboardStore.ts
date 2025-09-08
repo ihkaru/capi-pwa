@@ -410,6 +410,15 @@ export const useDashboardStore = defineStore('dashboard', () => {
     });
   }
 
+  function upsertAssignment(assignment: Assignment) {
+    const index = assignments.value.findIndex(a => a.id === assignment.id);
+    if (index !== -1) {
+      assignments.value[index] = assignment;
+    } else {
+      assignments.value.push(assignment);
+    }
+  }
+
   return {
     isLoading,
     isSyncingInBackground,
@@ -427,6 +436,7 @@ export const useDashboardStore = defineStore('dashboard', () => {
     addAssignment,
     deletePendingAssignment,
     createNewAssignment,
+    upsertAssignment,
     updateAssignmentInState(updatedAssignment: Assignment) {
       const index = assignments.value.findIndex(a => a.id === updatedAssignment.id);
       if (index !== -1) {

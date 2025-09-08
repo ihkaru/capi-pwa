@@ -80,6 +80,7 @@ class SyncEngine {
     for (const item of itemsToSync) {
       try {
         await activityDB.syncQueue.update(item.id!, { status: 'processing' });
+        const dashboardStore = useDashboardStore();
 
         let response;
         switch (item.type) {
@@ -88,10 +89,13 @@ class SyncEngine {
             if (!item.payload?.activityId || !item.payload?.assignmentResponse) {
               throw new Error('Payload untuk submitAssignment tidak lengkap.');
             }
-            // Assuming payload contains { assignmentId, assignmentResponse }
+            console.log('[CAPI-DEBUG] SyncEngine: Processing submitAssignment. Full payload:', JSON.stringify(item.payload, null, 2));
+            const apiPayload = [item.payload.assignmentResponse];
+            console.log('[CAPI-DEBUG] SyncEngine: Calling apiClient.submitAssignmentBatch with payload:', JSON.stringify(apiPayload, null, 2));
+
             response = await apiClient.submitAssignmentBatch(
-              item.payload.activityId, // Assuming activityId is part of payload
-              [item.payload.assignmentResponse] // Assuming API expects an array
+              item.payload.activityId,
+              apiPayload
             );
             break;
           case 'approveAssignment':
@@ -128,13 +132,67 @@ class SyncEngine {
             response = await apiClient.createAssignment(
               item.payload.assignment,
               item.payload.assignmentResponse,
+              null // No photo for this case
             );
             // After successful creation on server, update local status to Submitted by PPL
             const createdAssignment = { ...item.payload.assignment, status: 'Submitted by PPL' };
             const createdAssignmentResponse = { ...item.payload.assignmentResponse, status: 'Submitted by PPL' };
             await activityDB.assignments.put(createdAssignment);
             await activityDB.assignmentResponses.put(createdAssignmentResponse);
+            dashboardStore.upsertAssignment({ ...createdAssignment, response: createdAssignmentResponse });
             console.log(`SyncEngine: Updated local assignment ${createdAssignment.id} to 'Submitted by PPL' status.`);
+            break;
+
+          case 'createAssignmentWithPhoto':
+            { // Use block scope for new variables
+              const { localPhotoId, assignment, assignmentResponse, activityId, imageQuestionId } = item.payload;
+              if (!localPhotoId || !assignment || !assignmentResponse || !activityId || !imageQuestionId) {
+                throw new Error('Payload for createAssignmentWithPhoto is incomplete.');
+              }
+
+              // 1. Get the blob from local DB
+              const photoBlobRecord = await activityDB.photoBlobs.get(localPhotoId);
+              if (!photoBlobRecord) {
+                throw new Error(`Photo with localId ${localPhotoId} not found in local DB.`);
+              }
+
+              // 2. Upload the photo
+              const uploadResponse = await apiClient.uploadAssignmentPhoto(
+                activityId,
+                assignment.id, // Use the new assignment's ID as the interviewId
+                photoBlobRecord.blob as File
+              );
+
+              if (!uploadResponse || !uploadResponse.fileId) {
+                throw new Error('Failed to upload photo or server did not return a fileId.');
+              }
+              
+              const serverPhotoId = uploadResponse.fileId;
+
+              // 3. Create the assignment with the real photo ID
+              const createResponse = await apiClient.createAssignment(
+                assignment,
+                assignmentResponse,
+                serverPhotoId
+              );
+
+              // 4. Update local data to final state
+              const finalAssignment = { ...assignment, status: 'Submitted by PPL' };
+              const finalResponse = { ...assignmentResponse, status: 'Submitted by PPL' };
+              if (uploadResponse.filePath) {
+                  finalResponse.responses[imageQuestionId] = uploadResponse.filePath;
+              }
+
+              await activityDB.assignments.put(finalAssignment);
+              await activityDB.assignmentResponses.put(finalResponse);
+              dashboardStore.upsertAssignment({ ...finalAssignment, response: finalResponse });
+              
+              // 5. Cleanup
+              await activityDB.photoBlobs.delete(localPhotoId);
+              
+              console.log(`SyncEngine: Successfully processed createAssignmentWithPhoto for assignment ${assignment.id}.`);
+              response = createResponse; // for logging
+            }
             break;
 
           case 'uploadPhoto':
@@ -164,9 +222,9 @@ class SyncEngine {
         await activityDB.syncQueue.delete(item.id!); // Remove from queue on success
 
         // After successful createAssignment, trigger a delta sync for the activity
-        if (item.type === 'createAssignment') {
-          const dashboardStore = useDashboardStore();
-          await dashboardStore.syncDelta(item.payload.activityId);
+        if (item.type === 'createAssignment' || item.type === 'createAssignmentWithPhoto') {
+          // No longer need to call delta sync here as the UI is updated directly.
+          // await dashboardStore.syncDelta(item.payload.activityId);
         }
       } catch (error: any) {
         console.error(`SyncEngine: Failed to sync ${item.type} (ID: ${item.id}):`, error);

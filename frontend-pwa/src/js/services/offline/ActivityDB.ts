@@ -53,7 +53,7 @@ export interface MasterData {
 export interface SyncQueueItem {
   id?: number; // Primary key, auto-increment
   user_id: string;
-  type: 'submitAssignment' | 'approveAssignment' | 'rejectAssignment' | 'uploadPhoto';
+  type: 'submitAssignment' | 'approveAssignment' | 'rejectAssignment' | 'uploadPhoto' | 'createAssignmentWithPhoto';
   payload: any; // Data yang akan disinkronkan
   timestamp: string; // Waktu item ditambahkan
   status: 'pending' | 'processing' | 'failed';
@@ -78,79 +78,39 @@ export interface MasterSls {
   // tambahkan kolom lain jika perlu untuk ditampilkan di UI
 }
 
+export interface PhotoBlob {
+    id: string; // UUID generated on the client
+    user_id: string;
+    blob: Blob; // The actual image data
+}
+
 // --- DEFINISI KELAS DATABASE (Hanya satu kali) ---
 
 export class ActivityDB extends Dexie {
   // Deklarasi properti untuk setiap tabel
   activities!: Table<Activity>;
   assignments!: Table<Assignment>;
-  // assignmentResponses!: Table<AssignmentResponse>; // Tidak diperlukan lagi
+  assignmentResponses!: Table<AssignmentResponse>;
   formSchemas!: Table<FormSchema>;
   masterData!: Table<MasterData>;
   syncQueue!: Table<SyncQueueItem>;
   responseHistories!: Table<ResponseHistory>;
-  masterSls!: Table<MasterSls>; // TABEL BARU
+  masterSls!: Table<MasterSls>;
+  photoBlobs!: Table<PhotoBlob>;
 
   constructor() {
     super('CerdasActivityDB'); // Nama database
 
-    // VERSI 5: Menambahkan index pada status assignment
-            this.version(5).stores({
-      activities: '[id+user_id], user_id',
-      assignments: 'id, [activity_id+user_id+status], [activity_id+user_id], user_id, status',
-      formSchemas: '[activity_id+user_id], user_id',
-      masterData: '[activity_id+type+version], user_id',
-      syncQueue: '++id, type, status, user_id',
-      responseHistories: '++id, assignment_response_id, user_id',
-      masterSls: 'sls_id, id'
-    });
-
-    // VERSI 4: Menambahkan compound indexes untuk optimasi query
-    this.version(4).stores({
-      activities: '[id+user_id], user_id', // Compound index
-      assignments: 'id, [activity_id+user_id], user_id, level_6_code_full, level_4_code_full', // Compound index
-      formSchemas: '[activity_id+user_id], user_id', // Compound index
-      masterData: '[activity_id+type+version], user_id',
-      syncQueue: '++id, type, status, user_id',
-      responseHistories: '++id, assignment_response_id, user_id',
-      masterSls: 'sls_id, id'
-    });
-
-    // NAIKKAN VERSI DATABASE KE 3
-    this.version(3).stores({
-      activities: '[id+user_id], user_id',
-      assignments: 'id, activity_id, user_id, level_6_code_full, level_4_code_full',
-      // Hapus assignmentResponses
-      formSchemas: '[activity_id+user_id], user_id',
-      masterData: '[activity_id+type+version], user_id',
-      syncQueue: '++id, type, status, user_id',
-      responseHistories: '++id, assignment_response_id, user_id',
-      masterSls: 'sls_id, id'
-    }).upgrade(tx => {
-      // Logika upgrade jika diperlukan, misal memigrasikan data.
-      // Untuk sekarang, kita biarkan Dexie menghapus tabel yang tidak terdefinisi.
-      return tx.table('assignmentResponses').clear();
-    });
-
-    this.version(2).stores({
-      activities: '[id+user_id], user_id',
-      assignments: 'id, activity_id, user_id',
-      assignmentResponses: 'assignment_id, user_id',
-      formSchemas: '[activity_id+user_id], user_id',
-      masterData: '[activity_id+type+version], user_id',
-      syncQueue: '++id, type, status, user_id',
-      responseHistories: '++id, assignment_response_id, user_id',
-      masterSls: 'sls_id, id'
-    });
-
-    this.version(1).stores({
-      activities: '[id+user_id], user_id',
-      assignments: 'id, activity_id, user_id',
-      assignmentResponses: 'assignment_id, user_id',
-      formSchemas: '[activity_id+user_id], user_id',
-      masterData: '[activity_id+type+version], user_id',
-      syncQueue: '++id, type, status, user_id',
-      responseHistories: '++id, assignment_response_id, user_id',
+    this.version(6).stores({
+        activities: '[id+user_id], user_id',
+        assignments: 'id, [activity_id+user_id+status], [activity_id+user_id], user_id, status',
+        assignmentResponses: 'assignment_id, user_id',
+        formSchemas: '[activity_id+user_id], user_id',
+        masterData: '[activity_id+type+version], user_id',
+        syncQueue: '++id, type, status, user_id',
+        responseHistories: '++id, assignment_response_id, user_id',
+        masterSls: 'sls_id, id',
+        photoBlobs: 'id, user_id'
     });
   }
 }
