@@ -101,17 +101,29 @@ export const useDashboardStore = defineStore('dashboard', () => {
     try {
       const user = currentUserId.value;
       activity.value = await activityDB.activities.where({ id: activityId, user_id: user }).first() || null;
-      
-      if (activity.value?.user_role) {
-        authStore.setActiveRole(activity.value.user_role);
-      } else {
-        authStore.setActiveRole(null);
-        console.warn(`[dashboardStore] No user_role found for activity ${activityId}. Active role cleared.`);
-      }
+      console.log('[CAPI-DEBUG] Activity object loaded from DB:', JSON.stringify(activity.value, null, 2));
 
       formSchema.value = await activityDB.formSchemas.where({ activity_id: activityId, user_id: user }).first() || null;
+      console.log('[CAPI-DEBUG] formSchema object loaded from DB:', JSON.stringify(formSchema.value, null, 2));
+
+
+      // Attach schema to activity object for unified access
+      if (activity.value && formSchema.value) {
+        activity.value.form_schema = formSchema.value.schema;
+        console.log('[CAPI-DEBUG] Schema successfully attached to activity object.');
+      } else {
+        console.log('[CAPI-DEBUG] Schema attachment SKIPPED (activity or formSchema is null).');
+      }
       const allAssignments = await activityDB.assignments.where({ activity_id: activityId, user_id: user }).toArray();
-      assignments.value = allAssignments;
+      const responses = await activityDB.assignmentResponses.where({ user_id: user }).toArray();
+      const responsesMap = new Map(responses.map(r => [r.assignment_id, r]));
+
+      const combinedAssignments = allAssignments.map(asm => ({
+        ...asm,
+        response: responsesMap.get(asm.id) || null,
+      }));
+
+      assignments.value = combinedAssignments;
       
       // Use a Set to get unique SLS codes for a more efficient DB query
       const slsCodes = [...new Set(allAssignments.flatMap(a => [a.level_4_code_full, a.level_6_code_full]).filter(Boolean) as string[])];
@@ -194,6 +206,7 @@ export const useDashboardStore = defineStore('dashboard', () => {
         // 2. Fetch fresh data from server BEFORE starting the transaction
         console.log(`[syncFull] Fetching initial data from server for activity ${activityId}...`);
         const initialData = await apiClient.getInitialData(activityId, false);
+        console.log(`[CAPI-DEBUG] Form schema received from API inside syncFull:`, JSON.stringify(initialData.form_schema, null, 2));
         console.log(`[syncFull] Successfully fetched initial data from server. Assignments received: ${initialData.assignments.length}`);
 
         // 3. Use a single transaction for the entire operation

@@ -111,6 +111,7 @@ We are building the **Platform Cerdas**, a full-stack statistical survey applica
 
 The application is stable and the core data pipeline is robust.
 
+*   **Dynamic and Interactive Assignment List:** The `AssignmentListPage` now features a dynamic, mobile-friendly accordion table. It renders columns based on the `form_schema`, supports client-side sorting and type-aware filtering, and provides a much richer data overview for both PPLs and PMLs.
 *   **Dynamic Form Engine (Functional Core):** The engine in `InterviewFormPage.vue` now correctly renders multiple question types based on a JSON schema, including `text`, `number`, `select`, `image`, and `geotag`.
 *   **Rosters (Repeating Groups):** The form engine now supports repeating groups of questions (rosters), including nested rosters, allowing for complex household or entity lists.
 *   **Advanced Logic Engine (Foundation):** A `logicEngine` service has been created to handle conditional logic. The `showIf` condition is now implemented and working, allowing questions to be dynamically shown or hidden.
@@ -141,6 +142,10 @@ The high-level roadmap remains the same, with our focus still on the main CAPI f
 *   **Current Challenge:** Despite the implemented logic, `PENDING` assignments are still not being preserved by the "Sync Full" operation. The `syncFull` function's query for `PENDING` assignments is returning empty, even when such assignments are known to exist in the local Dexie.js database. This is the current focus of debugging.
 
 ## Crucial Lessons Learned
+
+17. **Idempotent Seeders (`updateOrCreate` vs. `firstOrCreate`):**
+    *   **Mistake:** A configuration-heavy `form_schema` in the database was not being updated when the seeder was re-run, even after the source JSON file was changed. This caused a frustrating, hard-to-diagnose bug where the frontend received a stale schema from the API.
+    *   **Lesson:** The `firstOrCreate` method in Laravel is not suitable for seeders that need to refresh data. It finds the first record and then does nothing. The correct method is `updateOrCreate`, which guarantees that the data in the database is always synchronized with the source code on every seed, making the seeding process idempotent and reliable.
 
 12. **Laravel Array Cast & JSON Serialization of Empty Objects:**
     *   **Mistake:** The `responses` attribute (cast as `array`) was being serialized as an empty JSON array (`"[]"`) instead of an empty JSON object (`"{}"`) when empty, causing frontend data binding issues.

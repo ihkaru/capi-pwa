@@ -1,4 +1,3 @@
-
 {
     "form_name": "REGSOSEK 2022 - LISTING",
     "form_version": 1,
@@ -15,8 +14,30 @@
         "level_4_code"
     ],
     "assignment_table_columns": [
-        { "key": "nama_krt", "label": "Nama KRT" },
-        { "key": "status", "label": "Status" }
+        {
+            "key": "assignment_label",
+            "label": "Keluarga",
+            "type": "string",
+            "default": true,
+            "sortable": true,
+            "filterable": true
+        },
+        {
+            "key": "status",
+            "label": "Status",
+            "type": "status_lookup",
+            "default": true,
+            "sortable": true,
+            "filterable": true
+        },
+        {
+            "key": "response.responses.jumlah_art",
+            "label": "Jml. ART",
+            "type": "number",
+            "default": false,
+            "sortable": true,
+            "filterable": true
+        }
     ],
     "pages": [
         {

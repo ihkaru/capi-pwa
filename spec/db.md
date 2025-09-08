@@ -148,9 +148,30 @@ Contoh:
     "level_2_code"
   ],
   "assignment_table_columns": [
-    { "key": "prefilled.nama_krt", "label": "Kepala Rumah Tangga" },
-    { "key": "prefilled.alamat", "label": "Alamat" },
-    { "key": "status", "label": "Status Terakhir" }
+    {
+      "key": "prefilled.nama_krt",
+      "label": "Kepala Rumah Tangga",
+      "type": "string",
+      "default": true,
+      "sortable": true,
+      "filterable": true
+    },
+    {
+      "key": "status",
+      "label": "Status",
+      "type": "status_lookup",
+      "default": true,
+      "sortable": true,
+      "filterable": true
+    },
+    {
+      "key": "responses.B1.R4",
+      "label": "Jumlah ART",
+      "type": "number",
+      "default": false,
+      "sortable": true,
+      "filterable": true
+    }
   ],
   "pages": [ ... ]
 }

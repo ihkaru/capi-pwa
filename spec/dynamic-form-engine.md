@@ -123,3 +123,52 @@ If a status other than 'Selesai Dicacah' is selected, the remaining questions in
 ### 5.6. PPL New Assignment Creation
 
 For details on the PPL New Assignment Creation feature, including its functional and technical specifications, please refer to the dedicated document: **`ppl-new-assignment-creation.md`**.
+
+## 6. Dynamic Assignment List Rendering
+
+This section specifies the functionality for rendering a dynamic, interactive table on the `AssignmentListPage.vue`, driven by the `assignment_table_columns` property of the `form_schema`.
+
+### 6.1. Column Configuration
+
+The behavior and appearance of the assignment list are controlled by the array of column objects in `assignment_table_columns`. For the detailed structure of a column object, refer to the `kegiatan_statistiks` table definition in `spec/db.md`. The key properties are:
+
+-   `key`: A dot-notation path to the data within the assignment or its response (e.g., `prefilled.nama_krt`, `responses.B1.R4`).
+-   `label`: The column header text.
+-   `type`: The data type (`string`, `number`, `date`, `boolean`, `status_lookup`) used for formatting, sorting, and filtering.
+-   `default`: A boolean indicating if the column should be visible in the default, collapsed row view.
+-   `sortable`: A boolean indicating if the list can be sorted by this column.
+-   `filterable`: A boolean indicating if the column can be used for filtering.
+
+**Column Order:** The display order of columns in the table is determined by the order of objects in the `assignment_table_columns` array.
+
+### 6.2. UI Layout: Accordion Table
+
+The assignment list will be rendered as an "accordion table" to accommodate a large number of columns on a mobile screen.
+
+-   **Default (Collapsed) View:** Each assignment is a single row displaying only the columns marked with `"default": true`.
+-   **Expanded View:** Clicking anywhere on a row expands that row to reveal a vertical list of all other available columns for that assignment, displayed as "Label: Value" pairs.
+
+### 6.3. Sorting
+
+-   If a column is marked as `"sortable": true`, its header in the table will be interactive.
+-   Tapping a header will sort the entire list of assignments by that column's value.
+-   Tapping the same header again will reverse the sort order (ascending/descending).
+-   All sorting will be performed client-side on the data available in the `dashboardStore` for instant feedback.
+
+### 6.4. Filtering
+
+-   A "Filter" button will be present on the `AssignmentListPage`.
+-   Tapping this button will open a modal dialog for building a filter query.
+-   The user can add one or more filter conditions.
+-   For each condition, the user selects a field from a list of all columns marked `"filterable": true`.
+-   The UI for entering the filter value will adapt based on the column's `type`:
+    -   `string`: A text input for "contains" filtering.
+    -   `number`, `date`: Inputs for a numeric or date range.
+    -   `boolean`, `status_lookup`: A dropdown list for selecting one or more predefined values.
+-   All filtering will be performed client-side.
+
+### 6.5. User Preferences
+
+-   To enhance usability, user preferences for the assignment list will be stored locally.
+-   This includes which columns are toggled for the default view and the current sort order.
+-   These preferences will be saved in the `app_metadata` table in IndexedDB, keyed by the activity ID, ensuring they persist between sessions for each specific activity.

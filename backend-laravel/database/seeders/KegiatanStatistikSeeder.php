@@ -24,7 +24,7 @@ class KegiatanStatistikSeeder extends Seeder
         $pendataanSchemaJson = File::get($pendataanSchemaPath);
 
         // Create specific activities for the case study
-        KegiatanStatistik::firstOrCreate(
+        KegiatanStatistik::updateOrCreate(
             ['name' => 'REGSOSEK 2022 - LISTING'],
             [
                 'year' => 2022,
@@ -36,7 +36,7 @@ class KegiatanStatistikSeeder extends Seeder
             ]
         );
 
-        KegiatanStatistik::firstOrCreate(
+        KegiatanStatistik::updateOrCreate(
             ['name' => 'REGSOSEK 2022 - PENDATAAN'],
             [
                 'year' => 2022,
