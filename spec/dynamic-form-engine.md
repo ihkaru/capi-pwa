@@ -72,15 +72,56 @@ The executed function will receive a single argument, `context`, which provides 
 -   `context.getParent(): object | null`: Returns the `context` object for the parent roster item, allowing access to parent data from within a nested roster.
 -   `context.getRoster(rosterId: string): object[]`: Gets an array of all data objects for a given roster, allowing for aggregate checks (e.g., counting items that meet a condition).
 
-## 4. Schema Versioning
+## 4. Dynamic Assignment Labels
+
+To significantly improve user experience for PPLs creating new assignments in the field, the engine supports dynamically generating the `assignment_label` based on user input. This replaces generic labels like "Penugasan Baru" with meaningful, identifiable names in real-time.
+
+### 4.1. Schema Configuration
+
+The feature is controlled by the `assignment_label_template` property in the `form_schema` (see `spec/db.md`).
+
+-   **`assignment_label_template`**: A string that defines the format of the label, using placeholders for field IDs from the `responses` object.
+-   **Example**: `"{nama_krt_final} - (Blok {level_5_code} No. Urut {nomor_urut_listing})"`
+
+### 4.2. Core Mechanism: Logic Engine Integration
+
+This feature's power comes from its integration with the **Advanced Logic Engine** (Section 3), not from a complex new template-parsing language. The placeholders in the template (e.g., `{nama_krt_final}`) should correspond to simple, top-level field IDs in the `responses` object.
+
+The complex work of deriving the values for these placeholders is the responsibility of the form's logic engine.
+
+**Workflow:**
+
+1.  **Data Extraction:** The survey designer uses the existing `logicEngine` capabilities to define rules that extract and compute data. This can include complex scenarios like finding a specific member in a roster.
+2.  **Populate Placeholder Fields:** The logic engine's rules will populate the top-level fields that are used by the template. For example, a rule might be: "Find the person in the `anggota_rumah_tangga` roster where `hubungan_dengan_krt` is 'Kepala Keluarga', and copy their `nama_art` value into the top-level `nama_krt_final` field." Another rule could copy the second roster member's name into `nama_art_kedua`.
+3.  **Template Composition:** The frontend UI layer (specifically `InterviewFormPage.vue` and its store) watches for any changes to the fields used in the `assignment_label_template` (e.g., `nama_krt_final`, `level_5_code`, etc.).
+4.  **Reactive Update:** When any of these watched fields change, the PWA immediately re-evaluates the template string, substituting the placeholders with their current values.
+5.  **Persistence:** The newly generated string is saved as the `assignment_label` property of the `Assignment` object in the local IndexedDB. This ensures the change is immediately reflected in the `AssignmentListPage` and persists across sessions.
+
+### 4.3. Example Implementation
+
+**Scenario:** The user wants the label to be `"{nama_kepala_rumah_tangga} / {the_second_art_in_roster}"`.
+
+1.  **Schema Setup:**
+    -   `assignment_label_template` is set to `"{krt_name} / {second_art_name}"`.
+2.  **Logic Engine Rules (Conceptual):**
+    -   A rule is defined that triggers when `anggota_rumah_tangga` changes. It finds the object where `hubungan_dengan_krt === 'Kepala Keluarga'` and copies its `nama_art` value to the top-level `responses.krt_name`.
+    -   Another rule is defined that triggers when `anggota_rumah_tangga` changes. It takes the object at index `1` from the roster and copies its `nama_art` value to `responses.second_art_name`.
+3.  **PWA Behavior:**
+    -   PPL opens a new form. The label is initially " / ".
+    -   PPL adds the first household member, "Budi", and marks him as "Kepala Keluarga". The logic engine runs, and `responses.krt_name` becomes "Budi". The assignment label reactively updates to "Budi / ".
+    -   PPL adds the second household member, "Ani". The logic engine runs, and `responses.second_art_name` becomes "Ani". The assignment label updates to "Budi / Ani".
+
+This architecture keeps the template mechanism simple while leveraging the already-specified power of the logic engine for complex data derivation, ensuring the system is both powerful and maintainable.
+
+## 5. Schema Versioning
 
 1.  **Detection:** Before displaying a list of assignments, the PWA will check if the `form_schema` version stored locally matches the version from the server.
 2.  **Notification:** If a newer version exists, a blocking pop-up will be shown on the **Activity Dashboard Page**, informing the user that an update is required before they can proceed.
 3.  **Data Migration:** When a user opens a form with a new schema, the PWA will attempt to map the old response data to the new schema. Data for questions whose `id` no longer exists in the new schema will be moved to a special `_archivedData` object within the `responses` JSON blob for audit purposes.
 
-## 5. Validation & Summary Feature
+## 6. Validation & Summary Feature
 
-### 5.1. Validation Rules
+### 6.1. Validation Rules
 
 The `validation` object on a question will define its rules.
 
@@ -91,11 +132,11 @@ The `validation` object on a question will define its rules.
 -   `"custom": string`: A JavaScript function string (see Section 3) that returns `true` if valid, or a `string` error message if invalid.
 -   `"level": "error" | "warning"`: (Optional) Defaults to `"error"`. An `"error"` blocks submission. A `"warning"` does not.
 
-### 5.2. Inline Validation
+### 6.2. Inline Validation
 
 To provide a smooth user experience, inline validation messages (the error or warning text appearing below a field) **must** only be displayed after the user has interacted with and left the field. This is typically handled by triggering the validation check on the input's `blur` event.
 
-### 5.3. Summary Feature
+### 6.3. Summary Feature
 
 1.  **UI:** A floating action button will be present on the form page. Clicking this button opens a **Popup** or **Modal** dialog that displays the total counts for the three validation categories (e.g., `Errors: 2, Warnings: 1, Blank: 5`).
 2.  **Logic:**
@@ -108,23 +149,23 @@ To provide a smooth user experience, inline validation messages (the error or wa
     -   This sheet will contain a list of all the specific questions belonging to the selected category.
     -   Clicking on a question in the sheet will smoothly scroll the main form to that specific question, focusing it if possible. This includes scrolling to questions within a nested roster.
 
-### 5.4. Roster Validation IDs
+### 6.4. Roster Validation IDs
 
 To uniquely identify each question within a repeating roster, the validation engine will use a dot-notation path for question IDs. This path is constructed as `rosterId.index.questionId`.
 
 -   **Example:** For a roster with `id: "anggota_rumah_tangga"`, the `nama_art` question for the first person in the roster will have a validation ID of `anggota_rumah_tangga.0.nama_art`.
 
-### 5.5. PPL Final Visit Status
+### 6.5. PPL Final Visit Status
 (This feature is implemented as a question type within the form schema, typically a 'select' or 'radio' input.)
 
 The form must provide a mechanism for PPLs to record the final outcome of a visit, distinct from submission. This will typically be a select input or a set of radio buttons with predefined options (e.g., 'Selesai Dicacah', 'Responden Menolak', 'Keluarga Pindah', 'Rumah Kosong', 'Tidak Ditemukan').
 If a status other than 'Selesai Dicacah' is selected, the remaining questions in the form should be disabled, and an optional notes field may be required.
 
-### 5.6. PPL New Assignment Creation
+### 6.6. PPL New Assignment Creation
 
 For details on the PPL New Assignment Creation feature, including its functional and technical specifications, please refer to the dedicated document: **`ppl-new-assignment-creation.md`**.
 
-## 6. Dynamic Assignment List Rendering
+## 7. Dynamic Assignment List Rendering
 
 This section specifies the functionality for rendering a dynamic, interactive table on the `AssignmentListPage.vue`, driven by the `assignment_table_columns` property of the `form_schema`.
 

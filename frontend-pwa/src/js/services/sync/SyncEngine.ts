@@ -97,6 +97,19 @@ class SyncEngine {
               item.payload.activityId,
               apiPayload
             );
+
+            // On success, update the local state
+            const submittedResponse = item.payload.assignmentResponse;
+            submittedResponse.status = 'Submitted by PPL';
+            await activityDB.assignmentResponses.put(submittedResponse);
+
+            const parentAssignment = await activityDB.assignments.get(submittedResponse.assignment_id);
+            if (parentAssignment) {
+                parentAssignment.status = 'Submitted by PPL';
+                await activityDB.assignments.put(parentAssignment);
+                dashboardStore.upsertAssignment({ ...parentAssignment, response: submittedResponse });
+                console.log(`[CAPI-DEBUG] SyncEngine: Updated local assignment ${submittedResponse.assignment_id} to 'Submitted by PPL' status.`);
+            }
             break;
           case 'approveAssignment':
             // Assuming payload contains { assignmentId, status, notes }
@@ -184,6 +197,7 @@ class SyncEngine {
               }
 
               await activityDB.assignments.put(finalAssignment);
+              console.log(`[CAPI-DEBUG] SyncEngine: Successfully updated local assignment ${assignment.id} to status Submitted by PPL after sync.`);
               await activityDB.assignmentResponses.put(finalResponse);
               dashboardStore.upsertAssignment({ ...finalAssignment, response: finalResponse });
               

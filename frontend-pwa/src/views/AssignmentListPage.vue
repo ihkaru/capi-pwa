@@ -6,14 +6,9 @@
         <f7-link icon-f7="arrow_up_arrow_down_circle" @click="isSortPopupOpened = true"></f7-link>
         <f7-link icon-f7="line_horizontal_3_decrease_circle" @click="isFilterPopupOpened = true"></f7-link>
       </f7-nav-right>
-      <f7-searchbar
-        class="searchbar-assignments"
-        expandable
-        placeholder="Cari Penugasan"
-        :disable-button="!f7.device.aurora"
-        @input="searchQuery = $event.target.value"
-        @searchbar:clear="searchQuery = ''"
-      ></f7-searchbar>
+      <f7-searchbar class="searchbar-assignments" expandable placeholder="Cari Penugasan"
+        :disable-button="!f7.device.aurora" @input="searchQuery = $event.target.value"
+        @searchbar:clear="searchQuery = ''"></f7-searchbar>
     </f7-navbar>
 
     <f7-list strong-ios outline-ios dividers-ios accordion-list class="assignment-list">
@@ -21,7 +16,7 @@
         <div class="text-align-center" style="width: 100%;">Tidak ada penugasan yang sesuai dengan filter.</div>
       </f7-list-item>
 
-      <f7-list-item v-for="assignment in processedAssignments" :key="assignment.id" accordion-item swipeout>
+      <f7-list-item v-for="assignment in processedAssignments" :key="assignment.id" accordion-item swipeout :style="{ backgroundColor: getBackgroundColorForStatus(assignment.status) }">
         <template #title>
           <div class="item-title-row">
             <div v-for="col in defaultColumns" :key="col.key" class="title-cell">
@@ -120,7 +115,7 @@ import { useDashboardStore } from '../js/stores/dashboardStore';
 import { useUiStore } from '../js/stores/uiStore';
 import { useAuthStore } from '../js/stores/authStore';
 import { Assignment } from '../js/services/offline/ActivityDB';
-import { getBadgeColorForStatus } from '../js/utils/statusColors';
+import { getBackgroundColorForStatus } from '../js/utils/statusColors';
 import { get } from 'lodash';
 
 const props = defineProps({
@@ -154,12 +149,9 @@ const otherColumns = computed(() => columns.value.filter(c => !c.default));
 const sortableColumns = computed(() => columns.value.filter(c => c.sortable));
 const filterableColumns = computed(() => columns.value.filter(c => c.filterable));
 
-const processedAssignments = ref<Assignment[]>([]);
-
 const getColDefinition = (key: string) => columns.value.find(c => c.key === key);
 
-function refreshAssignments() {
-  console.log('[CAPI-DEBUG] Refreshing assignments list...');
+const processedAssignments = computed(() => {
   let assignments = [...assignmentsInGroup.value];
 
   // Search Query Filtering
@@ -178,7 +170,7 @@ function refreshAssignments() {
     assignments = assignments.filter(assignment => {
       return activeFilters.value.every(filter => {
         if (!filter.key || filter.value === '' || filter.value === null) return true;
-        
+
         const colDef = getColDefinition(filter.key);
         const val = getDeepValue(assignment, filter.key);
 
@@ -199,7 +191,8 @@ function refreshAssignments() {
 
   // Sorting
   if (sortConfig.value.key) {
-    assignments.sort((a, b) => {
+    // Create a shallow copy before sorting to avoid mutating the original array
+    assignments = [...assignments].sort((a, b) => {
       const key = sortConfig.value.key as string;
       const valA = getDeepValue(a, key);
       const valB = getDeepValue(b, key);
@@ -209,12 +202,7 @@ function refreshAssignments() {
       return 0;
     });
   }
-  console.log(`[CAPI-DEBUG] Refresh complete. Displaying ${assignments.length} assignments.`);
-  processedAssignments.value = assignments;
-}
-
-watch(searchQuery, () => {
-  refreshAssignments();
+  return assignments;
 });
 
 function getDeepValue(obj: any, path: string) {
@@ -233,9 +221,6 @@ async function handleDeleteAssignment(assignmentId: string) {
 }
 
 function onPageAfterIn() {
-  console.log('[CAPI-DEBUG] Page is now active. Refreshing assignments.');
-  refreshAssignments();
-
   const currentActivityId = dashboardStore.activity?.id;
   if (!currentActivityId) return;
 
@@ -255,7 +240,6 @@ function applySort(key: string) {
     sortConfig.value.direction = 'asc';
   }
   isSortPopupOpened.value = false;
-  refreshAssignments();
 }
 
 function addFilter() {
@@ -263,16 +247,13 @@ function addFilter() {
 }
 
 function applyFilters() {
-  // remove empty filters
   activeFilters.value = activeFilters.value.filter(f => f.key && f.value);
   isFilterPopupOpened.value = false;
-  refreshAssignments();
 }
 
 function resetFilters() {
   activeFilters.value = [];
   isFilterPopupOpened.value = false;
-  refreshAssignments();
 }
 
 function handleAddNewAssignment() {
@@ -324,7 +305,6 @@ function handleAddNewAssignment() {
   const navigateUrl = `/assignment/new?activityId=${activityId}&prefilledGeoData=${encodedPrefilledGeoData}`;
   f7.views.main.router.navigate(navigateUrl);
 }
-
 </script>
 
 <style scoped>

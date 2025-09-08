@@ -4,7 +4,7 @@ import { activityDB, Assignment, AssignmentResponse } from '@/js/services/offlin
 import { useAuthStore } from './authStore';
 import { useDashboardStore } from './dashboardStore';
 import { executeLogic } from '@/js/services/logicEngine';
-import syncEngine  from '@/js/services/sync/SyncEngine';
+import syncEngine from '@/js/services/sync/SyncEngine';
 import apiClient from '@/js/services/ApiClient';
 
 interface FormState {
@@ -102,7 +102,7 @@ export const useFormStore = defineStore('form', () => {
                     checkAndPush(true, 'Wajib diisi');
                 } else if (isBlank) {
                     if (rules.requiredIf) {
-                         try {
+                        try {
                             if (executeLogic(rules.requiredIf, currentResponses)) {
                                 checkAndPush(true, 'Wajib diisi berdasarkan jawaban lain');
                             } else {
@@ -115,18 +115,18 @@ export const useFormStore = defineStore('form', () => {
                         summary.blanks.push({ questionId, label: question.label, message: 'Belum diisi' });
                     }
                 } else {
-                    checkAndPush(rules.minLength && value.length < rules.minLength, `Minimal ${rules.minLength} karakter`);
-                    checkAndPush(rules.maxLength && value.length > rules.maxLength, `Maksimal ${rules.maxLength} karakter`);
-                    checkAndPush(rules.min && Number(value) < rules.min, `Nilai minimal ${rules.min}`);
-                    checkAndPush(rules.max && Number(value) > rules.max, `Nilai maksimal ${rules.max}`);
-                    
+                    checkAndPush(!!rules.minLength && value.length < rules.minLength, `Minimal ${rules.minLength} karakter`);
+                    checkAndPush(!!rules.maxLength && value.length > rules.maxLength, `Maksimal ${rules.maxLength} karakter`);
+                    checkAndPush(!!rules.min && Number(value) < rules.min, `Nilai minimal ${rules.min}`);
+                    checkAndPush(!!rules.max && Number(value) > rules.max, `Nilai maksimal ${rules.max}`);
+
                     if (rules.custom) {
                         try {
                             const customResult = executeLogic(rules.custom, currentResponses);
                             if (customResult !== true) {
                                 checkAndPush(true, customResult || 'Isian tidak valid');
                             }
-                        } catch(e) {
+                        } catch (e) {
                             console.error(`Error executing custom validation for ${questionId}:`, e);
                         }
                     }
@@ -152,7 +152,7 @@ export const useFormStore = defineStore('form', () => {
     const validationMap = computed(() => {
         const map = new Map<string, { message: string; level: string }>();
         const addValidation = (item: any) => {
-             if (touchedFields.value.has(item.questionId)) {
+            if (touchedFields.value.has(item.questionId)) {
                 map.set(item.questionId, { message: item.message, level: item.level });
             }
         };
@@ -162,17 +162,18 @@ export const useFormStore = defineStore('form', () => {
     });
 
     async function initializeNewAssignment(activityId: string, prefilledGeoData: any) {
+        console.log('[CAPI-DEBUG] formStore: initializeNewAssignment started.', { activityId, prefilledGeoData });
         const user = authStore.user?.id;
         if (!user) {
             state.value.error = 'User not authenticated.';
             state.value.status = 'error';
+            console.error('[CAPI-DEBUG] formStore: User not authenticated.');
             return;
         }
 
         const newAssignmentId = crypto.randomUUID();
         const now = new Date().toISOString();
 
-        // Helper to get label from masterSls
         const getSlsLabel = (codeFull: string | null | undefined) => {
             if (!codeFull) return null;
             const sls = dashboardStore.masterSls.find(s => s.sls_id === codeFull);
@@ -185,7 +186,7 @@ export const useFormStore = defineStore('form', () => {
             ppl_id: user,
             pml_id: dashboardStore.activity?.pml_id_for_ppl || null,
             satker_id: authStore.user?.satker_id || null,
-            assignment_label: prefilledGeoData.assignment_label || 'Penugasan Baru', // Use prefilled label if available
+            assignment_label: prefilledGeoData.assignment_label || 'Penugasan Baru',
             prefilled_data: { ...prefilledGeoData },
             level_1_code: prefilledGeoData.level_1_code || null,
             level_1_label: prefilledGeoData.level_1_label || getSlsLabel(prefilledGeoData.level_1_code_full) || null,
@@ -206,6 +207,7 @@ export const useFormStore = defineStore('form', () => {
             updated_at: now,
             user_id: user,
         };
+        console.log('[CAPI-DEBUG] formStore: Created new assignment object:', JSON.parse(JSON.stringify(state.value.assignment)));
 
         state.value.assignmentResponse = {
             assignment_id: newAssignmentId,
@@ -218,28 +220,30 @@ export const useFormStore = defineStore('form', () => {
             updated_at: now,
         };
 
-        // Immediately save to Dexie and update dashboard store
         const plainAssignment = JSON.parse(JSON.stringify(state.value.assignment));
         const plainAssignmentResponse = JSON.parse(JSON.stringify(state.value.assignmentResponse));
 
+        console.log('[CAPI-DEBUG] formStore: Adding new assignment to DexieDB.');
         await activityDB.assignments.add(plainAssignment);
         await activityDB.assignmentResponses.add(plainAssignmentResponse);
+
+        console.log('[CAPI-DEBUG] formStore: Calling dashboardStore.addAssignment.');
         dashboardStore.addAssignment(plainAssignment);
 
-
-        // Load form schema from DexieDB
         const formSchemaRecord = await activityDB.formSchemas.get([activityId, user]);
         if (!formSchemaRecord) {
             state.value.error = `Form schema for activity ${activityId} not found in local DB. Please sync.`;
             state.value.status = 'error';
+            console.error(`[CAPI-DEBUG] formStore: Form schema for activity ${activityId} not found.`);
             return;
         }
         state.value.formSchema = formSchemaRecord.schema;
-        
+
         state.value.status = 'ready';
         state.value.isNew = true;
         touchedFields.value.clear();
-    }
+        console.log('[CAPI-DEBUG] formStore: initializeNewAssignment finished.');
+    } // <-- FIX: Added the missing closing brace for the function
 
     async function loadAssignmentFromLocalDB(assignmentId: string) {
         state.value.status = 'loading';
@@ -305,6 +309,7 @@ export const useFormStore = defineStore('form', () => {
                     current[key] = value;
                 } else {
                     if (!current[key]) {
+                        // Check if the next key is a number to decide between object or array
                         current[key] = isNaN(parseInt(keys[index + 1])) ? {} : [];
                     }
                     current = current[key];
@@ -313,20 +318,35 @@ export const useFormStore = defineStore('form', () => {
         }
     }
 
+    function updateAssignmentLabel() {
+        const template = state.value.formSchema?.assignment_label_template;
+        if (!template || !state.value.assignment) {
+            return;
+        }
+
+        const currentResponses = state.value.assignmentResponse?.responses || {};
+
+        const newLabel = template.replace(/{(\w+)}/g, (_match: string, placeholder: string) => {
+            return currentResponses[placeholder] || '';
+        });
+
+        if (state.value.assignment.assignment_label !== newLabel) {
+            state.value.assignment.assignment_label = newLabel;
+        }
+    }
+
     async function saveResponsesToLocalDB() {
         if (state.value.assignmentResponse && state.value.assignment) {
-            state.value.assignmentResponse.updated_at = new Date().toISOString();
-            
-            // Also update the parent assignment's updated_at timestamp
-            state.value.assignment.updated_at = new Date().toISOString();
+            const now = new Date().toISOString();
+            state.value.assignmentResponse.updated_at = now;
+            state.value.assignment.updated_at = now;
 
             const plainResponse = JSON.parse(JSON.stringify(state.value.assignmentResponse));
             const plainAssignment = JSON.parse(JSON.stringify(state.value.assignment));
 
             await activityDB.assignmentResponses.put(plainResponse);
             await activityDB.assignments.put(plainAssignment);
-            
-            // --- FIX: Construct the combined object for the dashboard store ---
+
             const combinedAssignmentForDashboard = {
                 ...plainAssignment,
                 response: plainResponse,
@@ -340,15 +360,14 @@ export const useFormStore = defineStore('form', () => {
         if (!state.value.assignment || !state.value.assignmentResponse || !authStore.user || !state.value.formSchema) {
             throw new Error('Cannot submit, essential data is missing.');
         }
-    
+
         const isNew = state.value.isNew;
         const assignment = JSON.parse(JSON.stringify(state.value.assignment));
         const assignmentResponse = JSON.parse(JSON.stringify(state.value.assignmentResponse));
-    
+
         let localPhotoId = null;
         let imageQuestionId = null;
-    
-        // For new assignments, check for an offline photo
+
         if (isNew && state.value.formSchema.pages) {
             for (const page of state.value.formSchema.pages) {
                 if (page.questions) {
@@ -358,7 +377,6 @@ export const useFormStore = defineStore('form', () => {
                             if (responseValue && typeof responseValue === 'object' && responseValue.localId) {
                                 localPhotoId = responseValue.localId;
                                 imageQuestionId = question.id;
-                                // Clean the response object, leave nothing or a placeholder
                                 delete assignmentResponse.responses[question.id];
                                 break;
                             }
@@ -368,7 +386,7 @@ export const useFormStore = defineStore('form', () => {
                 if (localPhotoId) break;
             }
         }
-    
+
         assignmentResponse.updated_at = new Date().toISOString();
         if (isNew) {
             assignmentResponse.status = 'SUBMITTED_LOCAL';
@@ -376,34 +394,31 @@ export const useFormStore = defineStore('form', () => {
         } else {
             assignmentResponse.status = 'Submitted by PPL';
         }
-        
+
         await activityDB.assignmentResponses.put(assignmentResponse);
-    
-        // If a new assignment has a photo, queue the special combined task
+
         if (isNew && localPhotoId) {
             await syncEngine.queueForSync('createAssignmentWithPhoto', {
                 assignment,
                 assignmentResponse,
                 localPhotoId: localPhotoId,
-                imageQuestionId: imageQuestionId, // Pass this to update the response later
+                imageQuestionId: imageQuestionId,
                 activityId: assignment.kegiatan_statistik_id,
             });
         } else if (isNew) {
-            // New assignment, but no photo
             await syncEngine.queueForSync('createAssignment', {
                 assignment,
                 assignmentResponse,
                 activityId: assignment.kegiatan_statistik_id,
             });
         } else {
-            // Existing assignment submission
             await syncEngine.queueForSync('submitAssignment', {
                 assignmentResponse,
                 activityId: assignment.kegiatan_statistik_id,
             });
         }
     }
-    
+
     return {
         state,
         pages,
@@ -415,6 +430,7 @@ export const useFormStore = defineStore('form', () => {
         updateResponse,
         saveResponsesToLocalDB,
         submit,
+        updateAssignmentLabel,
         touchField(questionId: string) {
             touchedFields.value.add(questionId);
         },

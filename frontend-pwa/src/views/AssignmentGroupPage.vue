@@ -54,13 +54,14 @@ const dashboardStore = useDashboardStore();
 
 onMounted(() => {
   const activityId = props.f7route?.params?.activityId;
-  console.log(`AssignmentGroupPage: Page is active for activity ID: ${activityId}`);
+  console.log(`[CAPI-DEBUG] AssignmentGroupPage: Page is mounted for activity ID: ${activityId}`);
   // Data seharusnya sudah dimuat oleh halaman dasbor sebelumnya,
   // tapi kita panggil lagi untuk memastikan jika halaman ini di-refresh langsung.
   if (activityId && dashboardStore.activity?.id !== activityId) {
+    console.log(`[CAPI-DEBUG] AssignmentGroupPage: Activity ID mismatch or not loaded. Calling loadDashboardData.`);
     dashboardStore.loadDashboardData(activityId);
   }
-  console.log(dashboardStore.groupedAssignments);
+  console.log('[CAPI-DEBUG] AssignmentGroupPage: Current grouped assignments:', JSON.parse(JSON.stringify(dashboardStore.groupedAssignments)));
 });
 
 function navigateToGroup(groupName: string, levelCodes: Partial<Assignment>) {

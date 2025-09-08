@@ -125,6 +125,14 @@ Definisi lengkap formulir `form_schema`. **Skema ini juga harus berisi properti 
 
 Selain itu, skema ini juga akan menyimpan konfigurasi untuk tampilan PWA agar sepenuhnya data-driven.
 
+Properti baru yang penting dalam `form_schema` adalah **`assignment_label_template`**.
+
+- **`assignment_label_template`** (opsional, string): Mendefinisikan format untuk label `Assignment` yang dibuat secara dinamis di PWA.
+  - **Tujuan:** Memberikan nama yang informatif dan unik untuk setiap `Assignment` baru yang dibuat oleh PPL di lapangan, menggantikan nama generik.
+  - **Mekanisme:** Template ini menggunakan placeholder dalam format `{field_id}`. PWA akan mengganti placeholder ini secara dinamis dengan nilai dari `responses` JSON.
+  - **Contoh:** `"{nama_krt_final} - (Blok {level_5_code} No. Urut {nomor_urut_listing})"`
+  - **Keterangan:** Field yang digunakan dalam template (seperti `nama_krt_final`) diharapkan diisi oleh `logicEngine` di PWA, yang dapat mengekstrak data dari lokasi mana pun dalam form, termasuk dari dalam roster yang kompleks. Label yang dihasilkan akan disimpan di kolom `assignments.assignment_label`.
+
 Contoh:
 
 ```json
@@ -133,6 +141,7 @@ Contoh:
     { "type": "KBLI", "version": 2020 },
     { "type": "WILAYAH_INDONESIA", "version": 1 }
   ],
+  "assignment_label_template": "{nama_krt_final} - (Blok {level_5_code} No. Urut {nomor_urut_listing})",
   "level_definitions": {
     "level_1_code": "Provinsi",
     "level_2_code": "Kabupaten/Kota",
@@ -149,8 +158,8 @@ Contoh:
   ],
   "assignment_table_columns": [
     {
-      "key": "prefilled.nama_krt",
-      "label": "Kepala Rumah Tangga",
+      "key": "assignment_label",
+      "label": "Label Tugas",
       "type": "string",
       "default": true,
       "sortable": true,

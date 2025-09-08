@@ -40,7 +40,8 @@ export const useDashboardStore = defineStore('dashboard', () => {
   });
 
   const groupedAssignments = computed(() => {
-    return assignments.value.reduce((acc, assignment) => {
+    console.log(`[CAPI-DEBUG] dashboardStore: Recalculating groupedAssignments. Total assignments: ${assignments.value.length}`);
+    const result = assignments.value.reduce((acc, assignment) => {
       const groupLevelCodes: Partial<Assignment> = {
         level_1_code: assignment.level_1_code,
         level_1_label: assignment.level_1_label,
@@ -91,6 +92,8 @@ export const useDashboardStore = defineStore('dashboard', () => {
       
       return acc;
     }, {} as Record<string, { assignments: Assignment[], summary: Record<string, number>, total: number, levelCodes: Partial<Assignment> }>);
+    console.log(`[CAPI-DEBUG] dashboardStore: Recalculation finished. Number of groups: ${Object.keys(result).length}`);
+    return result;
   });
 
   // --- ACTIONS ---
@@ -139,23 +142,41 @@ export const useDashboardStore = defineStore('dashboard', () => {
       return;
     }
     f7.dialog.preloader('Syncing Changes...');
+    console.log('[CAPI-DEBUG] dashboardStore: syncDelta started.');
     try {
       const now = new Date().toISOString();
       const lastSyncTimestamp = await appMetadataStore.getMetadata(`lastSyncTimestamp_${currentUserId.value}_${activityId}`);
+      console.log(`[CAPI-DEBUG] dashboardStore: syncDelta: lastSyncTimestamp is ${lastSyncTimestamp}`);
+      
       const updates = await apiClient.getActivitiesDelta(activityId, lastSyncTimestamp || '1970-01-01T00:00:00Z');
+      console.log('[CAPI-DEBUG] dashboardStore: syncDelta: Received updates from server:', JSON.parse(JSON.stringify(updates)));
 
+      // --- FIX: Surgically update the state instead of full reload ---
       if (updates.assignments?.length > 0) {
+        console.log(`[CAPI-DEBUG] dashboardStore: syncDelta: Upserting ${updates.assignments.length} assignments into Dexie & state.`);
         const assignmentsToUpsert = updates.assignments.map(assign => ({ ...assign, user_id: currentUserId.value, activity_id: activityId }));
         await activityDB.assignments.bulkPut(assignmentsToUpsert);
+        
+        // Update in-memory state
+        assignmentsToUpsert.forEach(upsertAssignment);
       }
 
       if (updates.assignmentResponses?.length > 0) {
+        console.log(`[CAPI-DEBUG] dashboardStore: syncDelta: Upserting ${updates.assignmentResponses.length} responses into Dexie.`);
         const responsesToUpsert = updates.assignmentResponses.map(res => ({ ...res, user_id: currentUserId.value }));
         await activityDB.assignmentResponses.bulkPut(responsesToUpsert);
+
+        // Find the parent assignments for these responses and update them in memory
+        for (const res of responsesToUpsert) {
+            const parentAssignment = assignments.value.find(a => a.id === res.assignment_id);
+            if (parentAssignment) {
+                parentAssignment.response = res;
+                parentAssignment.status = res.status;
+                upsertAssignment(parentAssignment);
+            }
+        }
       }
-      
-      // After syncing, reload data from the local DB to ensure UI is consistent
-      await loadDashboardData(activityId);
+      // --- END OF FIX ---
 
       await appMetadataStore.setMetadata(`lastSyncTimestamp_${currentUserId.value}_${activityId}`, now);
       f7.toast.show({ text: 'Changes synced successfully!', cssClass: 'success-toast', position: 'bottom', closeTimeout: 3000 });
@@ -164,6 +185,7 @@ export const useDashboardStore = defineStore('dashboard', () => {
       console.error('LOG-ERROR: [dashboardStore] syncDelta failed:', error);
       f7.dialog.alert('Failed to sync changes.');
     } finally {
+      console.log('[CAPI-DEBUG] dashboardStore: syncDelta finished.');
       f7.dialog.close();
     }
   }
@@ -373,8 +395,12 @@ export const useDashboardStore = defineStore('dashboard', () => {
 
   // This is a helper function if you need to add an assignment from another part of the app
   function addAssignment(newAssignment: Assignment) {
+    console.log(`[CAPI-DEBUG] dashboardStore: addAssignment called with id: ${newAssignment.id}. Current total: ${assignments.value.length}`);
     if (!assignments.value.some(a => a.id === newAssignment.id)) {
       assignments.value.push(newAssignment);
+      console.log(`[CAPI-DEBUG] dashboardStore: Assignment added. New total: ${assignments.value.length}`);
+    } else {
+      console.warn(`[CAPI-WARN] dashboardStore: addAssignment: Assignment with id ${newAssignment.id} already exists.`);
     }
   }
 

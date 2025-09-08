@@ -112,7 +112,7 @@ We are building the **Platform Cerdas**, a full-stack statistical survey applica
 The application is stable and the core data pipeline is robust.
 
 *   **Offline-First New Assignment with Photo (Fixed):** The workflow for creating a new assignment with a photo while offline is now fully functional. The system correctly saves the photo locally, queues a composite task in the sync engine, and processes the upload and creation dependently when online. The application state is now immediately consistent after a background sync, ensuring data integrity and a smooth user experience.
-*   **Dynamic and Interactive Assignment List:** The `AssignmentListPage` now features a dynamic, mobile-friendly accordion table. It renders columns based on the `form_schema`, supports client-side sorting and type-aware filtering, and provides a much richer data overview for both PPLs and PMLs. The underlying data-flow and component logic have been hardened to be resilient against framework lifecycle quirks, ensuring data is always fresh. A real-time search feature has also been added.
+*   **Fully Reactive Assignment List:** The `AssignmentListPage` is now fully reactive and resilient. It correctly displays all data, including columns with nested data like `Jml. ART`, and updates in real-time when data is changed anywhere in the app. This was achieved by refactoring the component to use a `computed` property for the list, which is the idiomatic Vue approach for handling derived state, ensuring the UI is always a direct reflection of the central data store.
 *   **Dynamic Form Engine (Functional Core):** The engine in `InterviewFormPage.vue` now correctly renders multiple question types based on a JSON schema, including `text`, `number`, `select`, `image`, and `geotag`.
 *   **Rosters (Repeating Groups):** The form engine now supports repeating groups of questions (rosters), including nested rosters, allowing for complex household or entity lists.
 *   **Advanced Logic Engine (Foundation):** A `logicEngine` service has been created to handle conditional logic. The `showIf` condition is now implemented and working, allowing questions to be dynamically shown or hidden.
@@ -139,79 +139,25 @@ The high-level roadmap remains the same, with our focus still on the main CAPI f
 
 ## Crucial Lessons Learned
 
-19. **Background Sync Must Update In-Memory State:**
-    *   **Mistake:** A background sync process (`SyncEngine`) correctly updated the persistent local database (IndexedDB) after a successful operation, but it failed to notify the live application. This created a state inconsistency where the UI continued to show stale data (e.g., an assignment status as "Pending" instead of "Submitted") until the user forced a full refresh, causing confusion and making items appear to vanish from lists.
-    *   **Lesson:** In an offline-first architecture, it is not enough for a background process to simply update the persistent storage. The background process **must also be responsible for updating the live, in-memory state** (e.g., the Pinia store). The fix was to have the `SyncEngine`, upon a successful sync, call a dedicated action (`upsertAssignment`) in the relevant Pinia store (`dashboardStore`) to push the new, server-confirmed state directly into the UI's reactive data source. This eliminates state inconsistencies and ensures the UI is always a correct reflection of the underlying data.
+20. **Background Sync Must Update All State Layers:**
+    *   **Mistake:** A background sync process (`SyncEngine`) successfully sent a submission to the server but only updated the local database (Dexie.js). It failed to update the live, in-memory state within the Pinia store.
+    *   **Lesson:** In an offline-first architecture, it is not enough for a background process to simply update the persistent storage. The background process **must also be responsible for updating the live, in-memory state** (e.g., the Pinia store). The fix was to have the `SyncEngine`, upon a successful sync, call a dedicated action (`upsertAssignment`) in the relevant Pinia store (`dashboardStore`) to push the new, server-confirmed state directly into the UI's reactive data source. This eliminates state inconsistencies and ensures the UI is always a correct reflection of the underlying data without requiring a manual refresh.
 
-18. **State Reactivity vs. Component Lifecycle:**
-    *   **Mistake:** A list view (`AssignmentListPage`) was not updating consistently. Data changed in a form (`InterviewFormPage`) was correctly updated in the central Pinia store, but the list view would sometimes show stale data or fail to render new data upon navigation. The issue persisted even after confirming the store's state was 100% correct and that reactive updates (`splice`) were being used.
-    *   **Lesson:** Correct state management is not enough. A component's visual state also depends on its lifecycle hooks. In a complex framework like Framework7-Vue, a component may not fully re-render when navigated back to, even if underlying reactive data has changed. The solution was to stop relying on purely declarative computed properties for the list and instead adopt a more robust, event-driven approach. By explicitly rebuilding the component's local list data inside the `onPageAfterIn` lifecycle hook, we guarantee the view is always in sync with the latest state from the store, bypassing any framework-level caching or reactivity quirks.
+19. **Embrace Idiomatic Reactivity (Computed Properties):**
+    *   **Mistake:** A list view (`AssignmentListPage`) was not updating consistently when its underlying data changed in the store. The component was manually copying the list data into a local `ref` only when the page loaded, causing it to become stale.
+    *   **Lesson:** For displaying derived state (e.g., a filtered or sorted list), always prefer a `computed` property. A computed property automatically tracks its dependencies (like the master list in the store, search queries, and sort settings) and re-evaluates itself whenever any of them change. This is the correct, idiomatic Vue approach. It is far more robust and less error-prone than manually managing state with `watch` effects or lifecycle hooks like `onPageAfterIn`.
 
-17. **Idempotent Seeders (`updateOrCreate` vs. `firstOrCreate`):**
+18. **Idempotent Seeders (`updateOrCreate` vs. `firstOrCreate`):**
     *   **Mistake:** A configuration-heavy `form_schema` in the database was not being updated when the seeder was re-run, even after the source JSON file was changed. This caused a frustrating, hard-to-diagnose bug where the frontend received a stale schema from the API.
     *   **Lesson:** The `firstOrCreate` method in Laravel is not suitable for seeders that need to refresh data. It finds the first record and then does nothing. The correct method is `updateOrCreate`, which guarantees that the data in the database is always synchronized with the source code on every seed, making the seeding process idempotent and reliable.
 
-12. **Laravel Array Cast & JSON Serialization of Empty Objects:**
+17. **Laravel Array Cast & JSON Serialization of Empty Objects:**
     *   **Mistake:** The `responses` attribute (cast as `array`) was being serialized as an empty JSON array (`"[]"`) instead of an empty JSON object (`"{}"`) when empty, causing frontend data binding issues.
     *   **Lesson:** When an `array` cast attribute is empty, Laravel's default JSON serialization converts it to `[]`. To ensure it serializes as `{}`, a custom accessor (`getResponsesAttribute`) was implemented in the `AssignmentResponse` model to always return an object, even if the underlying database value is `null` or `[]`.
 
-13. **Photo Upload Strategy for New Assignments:**
+16. **Photo Upload Strategy for New Assignments:**
     *   **Mistake:** Initial implementation passed the photo as a base64 string directly within the `createAssignment` payload, deviating from the specification.
     *   **Lesson:** The specification (`studi-kasus-kegiatan.md`) requires a two-step process: first, upload the photo to a dedicated media endpoint to obtain a unique ID, and then include this ID in the `assignmentResponse` when creating the new assignment. This ensures efficient storage and proper referencing of media assets.
-
-During the development of the Dynamic Form Engine, several crucial lessons were learned that highlight the importance of adhering to architectural principles and thoroughly understanding framework specifics:
-
-1.  **On Silent Failures, Suspect Security:**
-    *   **Mistake:** The camera failed to open with no errors in the console.
-    *   **Lesson:** When an interactive feature fails silently, it's often a browser security or permissions issue, not a logic bug. The `await` for a permission check was breaking the "user gesture" chain required by the browser. The fix was to use a more standard `<input type="file">` approach, which is more robust.
-
-2.  **On Build Errors, Prefer Overwriting to Replacing:**
-    *   **Mistake:** The `replace` tool failed repeatedly and sometimes corrupted files when updating large, complex components.
-    *   **Lesson:** For wholesale updates, it is far more reliable for me to `read_file` to get the latest content and then `write_file` to overwrite the entire file with the desired changes. This avoids any possibility of a mismatch or corruption.
-
-3.  **Trust the Spec, but Verify the Data Source:**
-    *   **Mistake:** The initial form was blank. I assumed a frontend rendering bug.
-    *   **Lesson:** The root cause was an empty `pages` array in the `form_schema` coming from the backend database seeder. **Lesson:** Always verify the actual data at its source early in the debugging process.
-
-4.  **Understand the Full Data Lifecycle & Framework "Magic":**
-    *   **Mistake:** A `TypeError` crashed the backend when trying to log schema details.
-    *   **Lesson:** The seeder was saving a raw JSON string, which Laravel's model casting then re-encoded, creating a double-encoded and invalid JSON in the database. **Lesson:** Be acutely aware of implicit framework transformations (like model casting).
-
-5.  **Ensure Data Consistency Across Local Storage Layers:**
-    *   **Mistake:** The app crashed with a `JSON.parse` error after fixing the backend.
-    *   **Lesson:** The `dashboardStore` saved the schema to the local DB as a JavaScript object, but the `formStore` tried to read it as a JSON string. **Lesson:** The "contract" for data formats between application components must be explicit and consistent.
-
-6.  **On UI Bugs, Suspect the Library First:**
-    *   **Mistake:** The validation summary counts refused to display in a `<f7-popup>`, even though debugging showed the data in the store was correct.
-    *   **Lesson:** When data is correct but a specific UI component doesn't update, suspect a reactivity bug in the component library itself. The issue was not in my logic, but a subtle bug in how the Framework7 popup/list-item components handle reactive data. The fix was to bypass the buggy component (`<f7-list-item>`) with a custom `div`-based template and to make the `@click` handler read from the store directly, ignoring the component's stale state.
-
-7.  **Roles are Contextual, Not Global:**
-    *   **Mistake:** Assumed the user's role (`PPL` or `PML`) was a global property on the main user object.
-    *   **Lesson:** The user's role is defined *per activity*. The application state must reflect this. The correct pattern is to have an `activeRole` in the `authStore` that is set when the user selects an activity from the dashboard. All role-based logic must then use this `activeRole` instead of `user.role`.
-
-8.  **Verify Full API Payloads for All Roles:**
-    *   **Mistake:** The form was empty for the PML because the API wasn't sending the PPL's answers.
-    *   **Lesson:** When implementing features for a new role (e.g., PML), explicitly verify the full API payload for that role's context. The `/initial-data` endpoint needed to be modified on the backend to include the `assignmentResponses` array for PML users, which was a step missed during initial development.
-
-9.  **Defend Against Double-Encoded JSON:**
-    *   **Mistake:** The form was still empty even after the API was sending the `assignmentResponses`.
-    *   **Lesson:** The `responses` field inside the `assignmentResponses` object was being sent as a string instead of a JSON object. This is a common issue with Laravel API Resources. The frontend must be defensive; if a field that should be an object is a string, `JSON.parse()` it. Log this and flag it as a backend issue to be fixed permanently.
-
-10. **UI Actions Must Be State-Aware:**
-    *   **Mistake:** Clicking a synced image preview triggered the camera upload instead of a viewer.
-    *   **Lesson:** The same UI element can have different behaviors based on context. The `handleImageClick` function should check the state (e.g., `isQuestionDisabled` or if the image `src` is a `data:` URL vs. an `http` URL) to decide whether to open the Photo Browser (for viewing) or the camera (for editing).
-
-14. **Dexie.js and Reactive Objects:**
-    *   **Mistake:** Subtle data persistence issues where properties (like `status`) were not correctly stored or queried in Dexie.js.
-    *   **Lesson:** Always explicitly "plainify" reactive objects (e.g., from Vue's `ref` or `reactive`) using `JSON.parse(JSON.stringify(myObject))` before storing them in Dexie.js. This ensures Dexie stores a clean, non-reactive JavaScript object, preventing unexpected behavior during storage and retrieval.
-
-15. **Clear Status Definitions and Transitions:**
-    *   **Mistake:** Ambiguity in status definitions (e.g., `Assigned` being used for both server-assigned and locally-submitted-but-unsynced assignments).
-    *   **Lesson:** Define a clear and distinct set of statuses for local data (e.g., `PENDING` for unsubmitted new assignments, `SUBMITTED_LOCAL` for locally submitted but not yet synced assignments) to accurately track the lifecycle of data that originates offline and transitions to online. This prevents incorrect data handling during synchronization and improves debugging clarity.
-
-16. **Environmental Debugging Challenges:**
-    *   **Mistake:** Code changes (especially logging) were not consistently applied or picked up by the development environment.
-    *   **Lesson:** When debugging persistent issues, especially those involving local file changes, always ensure the development server is fully restarted after every code modification. If problems persist, manually verify file content to rule out caching or build system issues. This prevents prolonged debugging due to outdated code being run.
 
 ## Mitigation Strategy for Duplication
 

@@ -105,7 +105,12 @@ Kegiatan lapangan tidak pernah berjalan mulus sepenuhnya. Platform Cerdas harus 
 
 - **Situasi:** Seorang PPL sedang melakukan listing di sebuah SLS. Ia menemukan sebuah rumah baru yang dihuni oleh satu keluarga yang belum pernah terdata sebelumnya.
 - **Implikasi Fitur untuk Cerdas Mobile (PWA) & Cerdas-SM (Backend):**
-  - Implementasi detail untuk skenario ini, termasuk penambahan fitur "Tambah Keluarga Baru" di PWA dan penanganan data di backend, dijelaskan secara komprehensif dalam dokumen terpisah: **`ppl-new-assignment-creation.md`**.
+  - PWA harus menyediakan fitur "Tambah Keluarga Baru" (atau "Tambah Assignment Baru") di halaman daftar tugas (`AssignmentListPage`).
+  - Saat PPL memulai, sebuah `Assignment` baru dibuat secara lokal dengan label awal, misalnya, "Penugasan Baru".
+  - `form_schema` untuk kegiatan Listing ini akan memiliki `assignment_label_template` yang dikonfigurasi, contohnya: `"{nama_krt} - (No. Urut Bangunan: {no_urut_bangunan})"`.
+  - Saat PPL mengisi formulir dan mengetik nama kepala keluarga (misalnya, "Budi Santoso") dan nomor urut bangunan (misalnya, "15"), PWA akan **secara dinamis memperbarui label assignment tersebut secara real-time**.
+  - Di daftar tugas, PPL akan melihat label berubah dari "Penugasan Baru" menjadi "Budi Santoso - (No. Urut Bangunan: 15)".
+  - Implementasi teknis yang lebih detail untuk alur kerja ini, termasuk penanganan data offline dan sinkronisasi, dijelaskan dalam dokumen terpisah: **`ppl-new-assignment-creation.md`**.
 
 ### Skenario B: Penanganan Unit Observasi Tidak Ditemukan (Saat Pendataan)
 

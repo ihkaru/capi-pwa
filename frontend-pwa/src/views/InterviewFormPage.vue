@@ -555,6 +555,14 @@ const debouncedSave = debounce(() => {
 
 watch(() => formStore.responses, debouncedSave, { deep: true });
 
+const debouncedLabelUpdate = debounce(() => {
+    if (formStore.state.isNew) { // Only update labels for new assignments
+        formStore.updateAssignmentLabel();
+    }
+}, 500); // Debounce to avoid rapid updates while typing
+
+watch(() => formStore.responses, debouncedLabelUpdate, { deep: true });
+
 function openCamera(questionId: string) {
   const inputEl = imageInputs.value[questionId];
   if (inputEl) {

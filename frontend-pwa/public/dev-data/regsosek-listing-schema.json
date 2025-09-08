@@ -1,7 +1,8 @@
 {
     "form_name": "REGSOSEK 2022 - LISTING",
-    "form_version": 1,
+    "form_version": 2,
     "masters_used": [],
+    "assignment_label_template": "{nama_krt} - (No. Urut: {nomor_urut_bangunan})",
     "level_definitions": {
         "level_1_code": "Provinsi",
         "level_2_code": "Kabupaten/Kota",
@@ -44,9 +45,20 @@
             "title": "Blok I: Identitas Keluarga",
             "questions": [
                 {
+                    "id": "nomor_urut_bangunan",
+                    "type": "number",
+                    "label": "1a. Nomor Urut Bangunan Fisik",
+                    "placeholder": "Masukkan nomor urut",
+                    "validation": {
+                        "required": true,
+                        "min": 1
+                    },
+                    "editableBy": ["PPL", "PML"]
+                },
+                {
                     "id": "nama_krt",
                     "type": "text",
-                    "label": "1. Nama Kepala Keluarga",
+                    "label": "1b. Nama Kepala Keluarga",
                     "placeholder": "Masukkan nama kepala keluarga",
                     "validation": {
                         "required": true,
