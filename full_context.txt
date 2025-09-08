@@ -85,6 +85,8 @@ Sistem mendukung dua metode autentikasi: email/password tradisional dan Single S
 2.  Backend menemukan `User` berdasarkan `google_id` yang cocok.
 3.  Login berhasil seketika.
 
+*Untuk detail implementasi teknis login, lihat `App\Http\Controllers\Auth\LoginController` dan `App\Http\Controllers\Auth\GoogleLoginController` di `GEMINI.md`.*
+
 ### 2.3. Peran Pengguna (Dikelola oleh Filament Shield)
 
 Peran bersifat kontekstual dan diberikan kepada pengguna dalam lingkup `Kegiatan Statistik` tertentu.
@@ -125,6 +127,7 @@ Peran bersifat kontekstual dan diberikan kepada pengguna dalam lingkup `Kegiatan
     - Melihat daftar `Assignment` dari PPL-nya yang berstatus `Submitted by PPL` atau status lain yang relevan.
     - Membuka `Assignment Response` dalam mode baca-saja atau mode edit terbatas (sesuai `form_schema`).
     - Melakukan tindakan **Approve** atau **Reject** (dengan `notes` wajib diisi) langsung dari antarmuka PWA.
+    - Melakukan tindakan **Batalkan Persetujuan** (dengan `notes` opsional) untuk mengembalikan status `Approved by PML` menjadi `Submitted by PPL` jika terjadi kesalahan persetujuan.
 
 - **`PPL (Petugas Pencacah Lapangan)`**
   - **Tanggung Jawab:** Melakukan wawancara dan mengumpulkan data di lapangan sesuai `Assignment`.
@@ -158,7 +161,7 @@ Saat sebuah `Assignment` dibuat, `Assignment Response` baru juga dibuat secara o
 
 1.  **Persiapan & Pengunduhan Awal Kegiatan (Per-Kegiatan):** Setelah PPL memilih sebuah kegiatan dari halaman beranda PWA, aplikasi akan memulai proses persiapan untuk kerja offline:
     a. **Pengecekan Lokal:** Aplikasi memeriksa apakah data inti untuk kegiatan ini sudah ada di IndexedDB.
-    b. **Unduh Data Inti:** Jika belum ada, PWA memanggil endpoint `initial-data/{activityId}` untuk mengunduh `Assignment` yang ditugaskan, `form_schema` versi terbaru, dan data relevan lainnya.
+    b. **Unduh Data Inti:** Jika belum ada, PWA memanggil endpoint `initial-data/{activityId}` untuk mengunduh `Assignment` yang ditugaskan, `form_schema` versi terbaru, dan data relevan lainnya. (Lihat `ActivityController::getInitialData`)
     c. **Identifikasi & Unduh Master Data:** PWA mem-parsing properti `masters_used` di `form_schema` dan mengunduh semua master data yang diperlukan.
     d. **Simpan ke Lokal:** Semua data disimpan ke IndexedDB. UI harus menampilkan progres yang jelas selama proses ini.
 
@@ -171,7 +174,7 @@ Saat sebuah `Assignment` dibuat, `Assignment Response` baru juga dibuat secara o
 4.  **Submit:** Setelah selesai, PPL menekan tombol "Submit".
     - Di PWA, status `Assignment Response` diubah menjadi **`Submitted by PPL`**.
     - Antarmuka formulir untuk assignment tersebut menjadi **terkunci (read-only)** bagi PPL.
-    - Aksi "submit" ini beserta seluruh datanya dimasukkan ke dalam antrean sinkronisasi (`sync_queue`).
+    - Aksi "submit" ini beserta seluruh datanya dimasukkan ke dalam antrean sinkronisasi (`sync_queue`). (Lihat `ActivityController::submitAssignments`)
 5.  **Sinkronisasi ke Server:** Saat perangkat PPL online, `SyncEngine` mengirimkan data ke server. Server memvalidasi data, memastikan PPL memiliki izin, dan memperbarui `status` di database menjadi **`Submitted by PPL`**.
 
 ### **Tahap 3: Pemeriksaan oleh PML (dilakukan di PWA)**
@@ -181,7 +184,7 @@ Saat sebuah `Assignment` dibuat, `Assignment Response` baru juga dibuat secara o
 3.  **Proses Review:** PML memilih sebuah assignment untuk diperiksa. PWA menampilkan data `Assignment Response` yang telah diisi PPL. Tergantung `form_schema`, beberapa field mungkin bisa diedit oleh PML, sementara yang lain bersifat read-only.
 4.  **Keputusan Pemeriksaan:**
 
-- **Prasyarat - Pengecekan Aksi Online:** Sebelum menampilkan tombol "Approve" atau "Reject", PWA **wajib** melakukan panggilan ke API server (misalnya, `GET /api/assignments/{id}/allowed-actions`). Panggilan ini bertujuan untuk mengkonfirmasi aksi apa yang diizinkan oleh sistem pada saat itu. Jika perangkat PML sedang offline, tombol-tombol aksi ini akan dinonaktifkan atau disembunyikan.
+- **Prasyarat - Pengecekan Aksi Online:** Sebelum menampilkan tombol "Approve" atau "Reject", PWA **wajib** melakukan panggilan ke API server (misalnya, `GET /api/assignments/{id}/allowed-actions`). Panggilan ini bertujuan untuk mengkonfirmasi aksi apa yang diizinkan oleh sistem pada saat itu. Jika perangkat PML sedang offline, tombol-tombol aksi ini akan dinonaktifkan atau disembunyikan. (Lihat `ActivityController::getAllowedActions`)
 - **Skenario A: Approve (Data Diterima):**
   - PML menekan tombol "Approve".
   - Di PWA, status `Assignment Response` diubah menjadi **`Approved by PML`**.
@@ -191,6 +194,13 @@ Saat sebuah `Assignment` dibuat, `Assignment Response` baru juga dibuat secara o
   - PWA menampilkan modal yang **mewajibkan** PML untuk mengisi alasan penolakan (`notes`).
   - Di PWA, status `Assignment Response` diubah menjadi **`Rejected by PML`** dan `notes` disimpan.
   - Aksi "reject" ini dimasukkan ke dalam `sync_queue` PML.
+- **Skenario C: Batalkan Persetujuan (Koreksi Kesalahan):**
+  - PML menekan tombol "Batalkan Persetujuan" (Revert Approval).
+  - PWA menampilkan modal yang **opsional** bagi PML untuk mengisi alasan pembatalan (`notes`).
+  - Di PWA, status `Assignment Response` diubah menjadi **`Submitted by PPL`** dan `notes` disimpan.
+  - Aksi "batalkan persetujuan" ini dimasukkan ke dalam `sync_queue` PML.
+
+*Untuk detail implementasi teknis perubahan status, lihat `AssignmentStatusController::update`.*
 
 5.  **Sinkronisasi Keputusan:** Saat perangkat PML online, `SyncEngine` mengirimkan keputusan (approve/reject) ke server. Server memvalidasi (memastikan PML berwenang) dan memperbarui `status` di database.
 
@@ -227,9 +237,13 @@ Meskipun `admin_kegiatan` tidak dapat mengedit data selama periode pengumpulan d
 
 1.  **Mekanisme:** Setiap pembaruan data yang dikirim ke server harus menyertakan nomor `version` yang dimiliki oleh PWA.
 2.  **Validasi Server:** Server akan membandingkan `version` yang masuk dengan `version` di database.
-    - **Versi Cocok:** Pembaruan diterima, dan server akan menaikkan nomor `version`-nya.
-    - **Versi Tidak Cocok (Konflik):** Pembaruan ditolak dengan error `409 Conflict`.
-3.  **Penanganan di PWA:** Jika PWA menerima error `409`, ini menandakan data di server lebih baru. PWA akan menghentikan proses kirim, mengunduh data terbaru dari server, dan memberitahu pengguna. Ini memastikan tidak ada data yang tertimpa secara tidak sengaja, misalnya saat sinkronisasi dari dua perangkat yang berbeda.
+    -   **Versi Cocok:** Pembaruan diterima, dan server akan menaikkan nomor `version`-nya.
+    -   **Versi Tidak Cocok (Konflik `409`):** Pembaruan ditolak dengan error `409 Conflict`. Ini menandakan bahwa data di server telah diperbarui oleh perangkat lain atau Admin sejak terakhir kali PWA melakukan sinkronisasi.
+3.  **Penanganan Konflik di PWA (Strategi "Server Wins"):**
+    -   Jika PWA menerima error `409 Conflict` saat mencoba mengirim data (misalnya, saat PPL menekan "Submit"), PWA akan menghentikan proses pengiriman untuk item tersebut.
+    -   PWA akan menampilkan dialog peringatan yang jelas kepada pengguna. Pesan akan menyatakan: "**Konflik Sinkronisasi:** Tugas ini telah diperbarui di server oleh perangkat lain. Perubahan lokal Anda tidak dapat dikirim. Mohon cadangkan data penting secara manual (misalnya, dengan tangkapan layar), lalu lakukan 'Sync Perubahan' untuk mendapatkan versi terbaru dari server."
+    -   Setelah pengguna menutup dialog, item yang gagal akan dihapus dari antrean sinkronisasi (`sync_queue`) untuk mencegah percobaan ulang yang tidak perlu.
+    -   **Penting:** Untuk menyelesaikan konflik, pengguna **wajib** melakukan "Sync Perubahan" (Delta Download). Proses ini akan menimpa data lokal dengan versi yang ada di server, sehingga perubahan lokal yang belum disinkronkan akan hilang. Pengguna harus memahami implikasi ini dan melakukan pencadangan manual jika diperlukan.
 
 ## 6. Strategi Sinkronisasi Data (PWA)
 
@@ -256,18 +270,114 @@ Ini adalah mode sinkronisasi utama yang akan sering digunakan oleh PPL dan PML u
   - **Perubahan isian kuesioner** yang mungkin dilakukan oleh PML atau Admin (jika diizinkan oleh alur kerja).
 - **Tujuan:** Memperbarui PWA dengan data terbaru dari server secara efisien, tanpa mengunduh ulang seluruh dataset. Hemat waktu dan kuota data.
 
-### 6.3. Sync Full Assignment (Aksi Pengguna - Overwrite Download)
+### 6.3. Sync Full Assignment (Aksi Pengguna - Overwrite Download with Preservation)
 
-Ini adalah mode sinkronisasi "darurat" atau "reset" yang digunakan dalam skenario khusus.
+Ini adalah mode sinkronisasi "darurat" atau "reset" yang digunakan dalam skenario khusus, dengan mekanisme pengaman untuk data yang baru dibuat secara lokal.
 
 - **Pemicu:** Aksi ini dipicu secara manual oleh pengguna melalui tombol "Sync Full Assignment", yang akan menampilkan dialog konfirmasi tegas.
 - **Apa yang Terjadi:**
-  1.  PWA akan menghapus semua data `Assignment` dan `Assignment Response` untuk kegiatan yang sedang aktif dari database lokal (IndexedDB).
-  2.  PWA kemudian akan mengunduh ulang **seluruh** daftar assignment dan isiannya dari server, seolah-olah ini adalah pertama kalinya pengguna mempersiapkan kegiatan tersebut.
-- **Tujuan:** Menyelesaikan masalah data yang mungkin rusak atau tidak sinkron di PWA dengan cara menimpanya dengan versi data yang "pasti benar" dari server.
+  1.  **Preservasi Data Lokal Baru:** PWA pertama-tama akan mencari dan menyimpan sementara semua `Assignment` yang dibuat secara lokal dan belum pernah disinkronkan (misalnya, yang memiliki status `PENDING`).
+  2.  **Pembersihan Data Lama:** PWA akan menghapus semua data `Assignment` dan `Assignment Response` lainnya untuk kegiatan yang sedang aktif dari database lokal (IndexedDB).
+  3.  **Unduh Ulang Data Server:** PWA kemudian akan mengunduh ulang **seluruh** daftar assignment dan isiannya dari server.
+  4.  **Re-integrasi Data Lokal:** Setelah unduhan dari server selesai, PWA akan menggabungkan kembali data `Assignment` baru yang telah disimpan sementara ke dalam daftar assignment yang sudah diperbarui.
+- **Tujuan:** Menyelesaikan masalah data yang mungkin rusak atau tidak sinkron di PWA dengan cara menimpanya dengan versi data dari server, **sambil memastikan pekerjaan baru yang belum terkirim tidak hilang**.
+
+### 6.4. Penghapusan Assignment Lokal oleh PPL
+
+- **Tujuan:** Untuk memperbaiki kesalahan jika PPL secara tidak sengaja membuat `Assignment` baru.
+- **Kewenangan:** Aksi ini hanya dapat dilakukan oleh pengguna dengan peran `PPL`.
+- **Kondisi:** Sebuah `Assignment` hanya dapat dihapus jika memenuhi dua syarat: 1) Dibuat secara lokal oleh PPL, dan 2) Statusnya **belum** menjadi `Submitted by PPL`. Secara teknis, ini berlaku untuk `Assignment` dengan status lokal `PENDING`.
+- **Mekanisme:** Aksi penghapusan diinisiasi melalui gestur geser (swipe action) pada baris `Assignment` di halaman `AssignmentListPage`.
+- **Konfirmasi:** Sebelum proses penghapusan dieksekusi, sebuah dialog konfirmasi **wajib** ditampilkan untuk mencegah kehilangan data yang tidak disengaja.
+- **Implikasi Teknis:** Aksi ini hanya menghapus data dari database lokal PWA (IndexedDB). Tidak ada interaksi dengan server yang diperlukan, karena `Assignment` tersebut belum pernah ada di backend.
 
 
 --- END OF FILE: spec\alur-kerja.md ---
+
+
+
+========================================================================
+## FILE: spec\data-flow-and-state-management.md
+========================================================================
+
+# Alur Data Aplikasi & Pola State Management
+
+Dokumen ini menjelaskan alur data utama dalam aplikasi Cerdas CAPI PWA dan prinsip-prinsip dasar yang digunakan dalam manajemen state (Pinia) dan interaksi data (online/offline).
+
+## Prinsip Desain Utama
+
+Arsitektur frontend aplikasi ini dibangun di atas tiga prinsip utama:
+
+1.  **Offline-First (Utamakan Offline):** UI tidak pernah menunggu jaringan secara langsung. Aplikasi selalu memuat data dari database lokal (IndexedDB via Dexie.js) terlebih dahulu untuk memberikan tampilan yang instan. Sinkronisasi dengan server terjadi di latar belakang, dan UI akan diperbarui setelahnya. Ini penting untuk aplikasi survei lapangan yang mungkin kehilangan koneksi.
+2.  **State-Driven UI (UI Digerakkan oleh State):** Komponen Vue (`.vue` files) dibuat "bodoh". Mereka tidak mengelola data yang kompleks. Tugas mereka adalah menampilkan data yang ada di Pinia `stores` dan memanggil `actions` di store tersebut ketika pengguna melakukan sesuatu.
+3.  **Pemisahan Tanggung Jawab (Separation of Concerns):**
+    *   **Components (Views):** Hanya untuk menampilkan data dan menangkap input pengguna.
+    *   **Stores (Pinia):** Pusat logika bisnis. Mengelola state aplikasi, berinteraksi dengan database lokal, dan memanggil `ApiClient` untuk komunikasi jaringan.
+    *   **ApiClient:** Satu-satunya bagian yang "berbicara" dengan API backend. Mengelola detail HTTP, token, dan endpoint.
+
+---
+
+## Tiga Store Utama (Pusat Logika)
+
+Aplikasi ini memiliki tiga store utama yang bekerja sama:
+
+### 1. `authStore` (Manajer Otentikasi)
+- **Tanggung Jawab Tunggal:** Mengelola identitas pengguna yang sedang login.
+- **Analogi:** Petugas keamanan yang memegang kartu identitas Anda.
+- **Kapan Digunakan:** Saat login, logout, dan untuk memeriksa apakah pengguna memiliki hak akses di seluruh aplikasi.
+
+### 2. `activityStore` (Manajer Daftar Kegiatan)
+- **Tanggung Jawab Tunggal:** Mengelola daftar kegiatan/proyek yang ditugaskan kepada pengguna.
+- **Analogi:** Manajer proyek yang memberikan daftar pekerjaan Anda.
+- **Kapan Digunakan:** Di `HomePage` untuk menampilkan daftar kegiatan yang bisa dipilih pengguna.
+
+### 3. `dashboardStore` (Manajer Data Aktif & Offline)
+- **Tanggung Jawab Tunggal:** Mengelola SEMUA data detail untuk **satu kegiatan yang sedang aktif dibuka**. Ini adalah store yang paling sibuk dan menjadi inti dari fungsionalitas offline.
+- **Analogi:** Meja kerja Anda. Saat Anda memilih satu proyek, semua dokumen terkait proyek itu diletakkan di atas meja ini.
+- **Kapan Digunakan:** Di `ActivityDashboardPage` dan semua halaman setelahnya (`AssignmentGroupPage`, dll.) untuk menampilkan, mengelola, dan menyinkronkan data penugasan, kuesioner, dan data master.
+
+---
+
+## Alur Perjalanan Pengguna (User Journey)
+
+Berikut adalah alur data langkah demi langkah dari login hingga melihat detail pekerjaan.
+
+**Langkah 1: `LoginPage`**
+- **Pemicu:** Pengguna memasukkan kredensial dan menekan "Login".
+- **Interaksi Store:** Memanggil `authStore.setAuthState(token, user)`.
+- **Sumber Data:** **API Server**. Halaman ini melakukan panggilan jaringan untuk otentikasi.
+- **Data Kunci yang Dihasilkan:** `token` dan `user` yang disimpan di `authStore`.
+
+**Langkah 2: `HomePage`**
+- **Pemicu:** Navigasi otomatis setelah login berhasil.
+- **Interaksi Store:** Memanggil `activityStore.fetchActivities()`.
+- **Sumber Data:** **API Server**, kemudian hasilnya disimpan ke **Database Lokal (IndexedDB)**.
+- **Data Kunci yang Diteruskan:** Pengguna memilih sebuah kegiatan, dan **`activityId`** dari kegiatan tersebut diteruskan ke halaman berikutnya melalui URL.
+
+**Langkah 3: `ActivityDashboardPage`**
+- **Pemicu:** Pengguna mengklik sebuah kegiatan di `HomePage`.
+- **Interaksi Store:**
+    1.  Memanggil `dashboardStore.loadDashboardData(activityId)` untuk memuat data cepat.
+    2.  Memanggil `dashboardStore.syncActivityData(activityId)` untuk sinkronisasi di latar belakang.
+- **Sumber Data:**
+    1.  **Database Lokal** (untuk tampilan instan).
+    2.  **API Server** (untuk sinkronisasi).
+- **Data Kunci yang Diteruskan:** **`activityId`** yang sama diteruskan lagi ke halaman berikutnya.
+
+**Langkah 4: `AssignmentGroupPage`**
+- **Pemicu:** Pengguna mengklik tombol "Lihat Detail Per Wilayah" di `ActivityDashboardPage`.
+- **Interaksi Store:** Tidak ada `action` yang dipanggil. Komponen ini hanya **membaca state** dari `dashboardStore` untuk menampilkan daftar grup penugasan (misal: per kecamatan atau per desa).
+- **Sumber Data:** **Hanya dari State `dashboardStore`** yang sudah diisi oleh halaman sebelumnya.
+- **Data Kunci yang Diteruskan:** Pengguna memilih sebuah grup, dan **`groupName`** dari grup tersebut diteruskan ke halaman berikutnya melalui URL.
+
+**Langkah 5: `AssignmentListPage` (dan halaman detail lainnya)**
+- **Pemicu:** Pengguna mengklik salah satu grup di `AssignmentGroupPage`.
+- **Interaksi Store:** Tidak ada `action` yang dipanggil. Komponen ini hanya **membaca state** dari `dashboardStore` menggunakan `groupName` yang diterima untuk menampilkan daftar penugasan dalam grup tersebut.
+- **Sumber Data:** **Hanya dari State `dashboardStore`**. Sama seperti langkah sebelumnya, halaman ini sangat cepat karena tidak ada interaksi jaringan atau database.
+- **Data Kunci:** Tidak ada data kunci baru, karena semua data yang relevan sudah ada di `dashboardStore`.
+
+
+--- END OF FILE: spec\data-flow-and-state-management.md ---
 
 
 
@@ -402,6 +512,14 @@ Definisi lengkap formulir `form_schema`. **Skema ini juga harus berisi properti 
 
 Selain itu, skema ini juga akan menyimpan konfigurasi untuk tampilan PWA agar sepenuhnya data-driven.
 
+Properti baru yang penting dalam `form_schema` adalah **`assignment_label_template`**.
+
+- **`assignment_label_template`** (opsional, string): Mendefinisikan format untuk label `Assignment` yang dibuat secara dinamis di PWA.
+  - **Tujuan:** Memberikan nama yang informatif dan unik untuk setiap `Assignment` baru yang dibuat oleh PPL di lapangan, menggantikan nama generik.
+  - **Mekanisme:** Template ini menggunakan placeholder dalam format `{field_id}`. PWA akan mengganti placeholder ini secara dinamis dengan nilai dari `responses` JSON.
+  - **Contoh:** `"{nama_krt_final} - (Blok {level_5_code} No. Urut {nomor_urut_listing})"`
+  - **Keterangan:** Field yang digunakan dalam template (seperti `nama_krt_final`) diharapkan diisi oleh `logicEngine` di PWA, yang dapat mengekstrak data dari lokasi mana pun dalam form, termasuk dari dalam roster yang kompleks. Label yang dihasilkan akan disimpan di kolom `assignments.assignment_label`.
+
 Contoh:
 
 ```json
@@ -410,6 +528,7 @@ Contoh:
     { "type": "KBLI", "version": 2020 },
     { "type": "WILAYAH_INDONESIA", "version": 1 }
   ],
+  "assignment_label_template": "{nama_krt_final} - (Blok {level_5_code} No. Urut {nomor_urut_listing})",
   "level_definitions": {
     "level_1_code": "Provinsi",
     "level_2_code": "Kabupaten/Kota",
@@ -425,9 +544,30 @@ Contoh:
     "level_2_code"
   ],
   "assignment_table_columns": [
-    { "key": "prefilled.nama_krt", "label": "Kepala Rumah Tangga" },
-    { "key": "prefilled.alamat", "label": "Alamat" },
-    { "key": "status", "label": "Status Terakhir" }
+    {
+      "key": "assignment_label",
+      "label": "Label Tugas",
+      "type": "string",
+      "default": true,
+      "sortable": true,
+      "filterable": true
+    },
+    {
+      "key": "status",
+      "label": "Status",
+      "type": "status_lookup",
+      "default": true,
+      "sortable": true,
+      "filterable": true
+    },
+    {
+      "key": "responses.B1.R4",
+      "label": "Jumlah ART",
+      "type": "number",
+      "default": false,
+      "sortable": true,
+      "filterable": true
+    }
   ],
   "pages": [ ... ]
 }
@@ -640,6 +780,315 @@ Untuk memastikan fleksibilitas sistem dalam menangani berbagai jenis survei (mis
 
 
 ========================================================================
+## FILE: spec\dynamic-form-engine.md
+========================================================================
+
+# Dynamic Form Engine Specification
+
+## 1. Overview
+
+This document specifies the functionality of the dynamic form engine for the Cerdas Mobile PWA. The engine's primary responsibility is to render an interactive survey form based on a JSON schema (`form_schema`). It must be flexible, support complex validation and conditional logic, and work seamlessly in an offline-first environment.
+
+## 2. Schema Structure (`form_schema.json`)
+
+The form is defined by a single JSON object.
+
+### 2.1. Top-Level Properties
+
+| Key                                | Type     | Description                                                                                             |
+| ---------------------------------- | -------- | ------------------------------------------------------------------------------------------------------- |
+| `form_name`                        | `string` | The display name of the form.                                                                           |
+| `form_version`                     | `integer`| The version number of this schema. Incremented for every change.                                        |
+| `masters_used`                     | `array`  | An array of master data keys (e.g., `[{ "type": "KBLI", "version": 1 }]`) required by the form.         |
+| `level_definitions`                | `object` | Maps generic level codes (`level_1_code`) to human-readable names (`Provinsi`).                         |
+| `assignment_table_grouping_levels` | `array`  | Defines the hierarchy for grouping assignments in the summary view.                                     |
+| `assignment_table_columns`         | `array`  | Defines the columns to show in the assignment list view.                                              |
+| `pages`                            | `array`  | An array of `Page` objects, defining the form's pagination and structure.                               |
+
+### 2.2. Question Definition
+
+Each question is an object with the following properties:
+
+| Key                | Type      | Description                                                                                             |
+| ------------------ | --------- | ------------------------------------------------------------------------------------------------------- |
+| `id`               | `string`  | A unique identifier for the question within the form (e.g., `nama_krt`).                                |
+| `type`             | `string`  | The input type. See Section 2.3 for a full list.                                                        |
+| `label`            | `string`  | The question text displayed to the user.                                                                |
+| `placeholder`      | `string`  | (Optional) Placeholder text for the input field.                                                        |
+| `options`          | `array`   | (For `select`, `radio`) An array of `{ "label": string, "value": any }` objects.                        |
+| `validation`       | `object`  | See Section 5.                                                                                          |
+| `conditionalLogic` | `object`  | See Section 3.                                                                                          |
+| `editableBy`       | `array`   | An array of user roles (e.g., `['PPL', 'PML']`) that can edit this field.                               |
+| `...`              | `any`     | Other properties specific to the question type.                                                         |
+
+### 2.3. Question Types
+
+The engine must support the following types:
+
+-   **`text`**: A standard single-line text input.
+-   **`number`**: A text input with `type="number"`.
+-   **`textarea`**: A multi-line text input.
+-   **`select`**: A dropdown list.
+-   **`radio`**: A list of radio buttons.
+-   **`image`**: An image input.
+    -   Must have a `source` property, an array containing one or both of `'camera'` and `'gallery'`.
+-   **`geotag`**: A button that captures GPS coordinates.
+    -   Can have a `min_accuracy` property (in meters) to enforce a minimum GPS accuracy.
+-   **`prefilled_display`**: A read-only field to display data from the `prefilled_data` object of an assignment.
+-   **`roster`**: A repeating group of questions.
+    -   **Schema:** `{"type": "roster", "id": "anggota_rumah_tangga", "item_label": "Anggota Rumah Tangga", "questions": [ ...nested questions... ]}`
+    -   The `questions` array contains a full set of question definitions for a single roster item.
+    -   Rosters can be nested within other rosters.
+-   **`dynamic_roster_add_button`**: A button that allows the PPL to add a new top-level roster item (e.g., a new family) to the current assignment. This is specifically for scenarios like Listing where new entities are discovered in the field.
+
+## 3. Advanced Logic Engine
+
+To provide maximum flexibility, conditional logic will be defined by a string containing a JavaScript function body. This function will be executed within a sandboxed environment with a controlled `context` object.
+
+-   **Properties:** `showIf`, `requiredIf`, `validation.custom`, and `options.filter` will all accept a function string.
+-   **Example:** `"showIf": "return context.get('ada_balita') === 'ya'"`
+
+### 3.1. The `context` Object
+
+The executed function will receive a single argument, `context`, which provides safe access to the form's state.
+
+-   `context.get(questionId: string): any`: Gets the value of a question within the current scope (the current form or the current roster item).
+-   `context.getRootValue(questionId: string): any`: Gets the value of a question from the top-level (non-roster) part of the form.
+-   `context.getParent(): object | null`: Returns the `context` object for the parent roster item, allowing access to parent data from within a nested roster.
+-   `context.getRoster(rosterId: string): object[]`: Gets an array of all data objects for a given roster, allowing for aggregate checks (e.g., counting items that meet a condition).
+
+## 4. Dynamic Assignment Labels
+
+To significantly improve user experience for PPLs creating new assignments in the field, the engine supports dynamically generating the `assignment_label` based on user input. This replaces generic labels like "Penugasan Baru" with meaningful, identifiable names in real-time.
+
+### 4.1. Schema Configuration
+
+The feature is controlled by the `assignment_label_template` property in the `form_schema` (see `spec/db.md`).
+
+-   **`assignment_label_template`**: A string that defines the format of the label, using placeholders for field IDs from the `responses` object.
+-   **Example**: `"{nama_krt_final} - (Blok {level_5_code} No. Urut {nomor_urut_listing})"`
+
+### 4.2. Core Mechanism: Logic Engine Integration
+
+This feature's power comes from its integration with the **Advanced Logic Engine** (Section 3), not from a complex new template-parsing language. The placeholders in the template (e.g., `{nama_krt_final}`) should correspond to simple, top-level field IDs in the `responses` object.
+
+The complex work of deriving the values for these placeholders is the responsibility of the form's logic engine.
+
+**Workflow:**
+
+1.  **Data Extraction:** The survey designer uses the existing `logicEngine` capabilities to define rules that extract and compute data. This can include complex scenarios like finding a specific member in a roster.
+2.  **Populate Placeholder Fields:** The logic engine's rules will populate the top-level fields that are used by the template. For example, a rule might be: "Find the person in the `anggota_rumah_tangga` roster where `hubungan_dengan_krt` is 'Kepala Keluarga', and copy their `nama_art` value into the top-level `nama_krt_final` field." Another rule could copy the second roster member's name into `nama_art_kedua`.
+3.  **Template Composition:** The frontend UI layer (specifically `InterviewFormPage.vue` and its store) watches for any changes to the fields used in the `assignment_label_template` (e.g., `nama_krt_final`, `level_5_code`, etc.).
+4.  **Reactive Update:** When any of these watched fields change, the PWA immediately re-evaluates the template string, substituting the placeholders with their current values.
+5.  **Persistence:** The newly generated string is saved as the `assignment_label` property of the `Assignment` object in the local IndexedDB. This ensures the change is immediately reflected in the `AssignmentListPage` and persists across sessions.
+
+### 4.3. Example Implementation
+
+**Scenario:** The user wants the label to be `"{nama_kepala_rumah_tangga} / {the_second_art_in_roster}"`.
+
+1.  **Schema Setup:**
+    -   `assignment_label_template` is set to `"{krt_name} / {second_art_name}"`.
+2.  **Logic Engine Rules (Conceptual):**
+    -   A rule is defined that triggers when `anggota_rumah_tangga` changes. It finds the object where `hubungan_dengan_krt === 'Kepala Keluarga'` and copies its `nama_art` value to the top-level `responses.krt_name`.
+    -   Another rule is defined that triggers when `anggota_rumah_tangga` changes. It takes the object at index `1` from the roster and copies its `nama_art` value to `responses.second_art_name`.
+3.  **PWA Behavior:**
+    -   PPL opens a new form. The label is initially " / ".
+    -   PPL adds the first household member, "Budi", and marks him as "Kepala Keluarga". The logic engine runs, and `responses.krt_name` becomes "Budi". The assignment label reactively updates to "Budi / ".
+    -   PPL adds the second household member, "Ani". The logic engine runs, and `responses.second_art_name` becomes "Ani". The assignment label updates to "Budi / Ani".
+
+This architecture keeps the template mechanism simple while leveraging the already-specified power of the logic engine for complex data derivation, ensuring the system is both powerful and maintainable.
+
+## 5. Schema Versioning
+
+1.  **Detection:** Before displaying a list of assignments, the PWA will check if the `form_schema` version stored locally matches the version from the server.
+2.  **Notification:** If a newer version exists, a blocking pop-up will be shown on the **Activity Dashboard Page**, informing the user that an update is required before they can proceed.
+3.  **Data Migration:** When a user opens a form with a new schema, the PWA will attempt to map the old response data to the new schema. Data for questions whose `id` no longer exists in the new schema will be moved to a special `_archivedData` object within the `responses` JSON blob for audit purposes.
+
+## 6. Validation & Summary Feature
+
+### 6.1. Validation Rules
+
+The `validation` object on a question will define its rules.
+
+-   `"required": true`: The field cannot be empty.
+-   `"requiredIf": string`: A JavaScript function string (see Section 3) that makes the field required only if the logic returns `true`.
+-   `"minLength": number`, `"maxLength": number`: For text.
+-   `"min": number`, `"max": number`: For numbers.
+-   `"custom": string`: A JavaScript function string (see Section 3) that returns `true` if valid, or a `string` error message if invalid.
+-   `"level": "error" | "warning"`: (Optional) Defaults to `"error"`. An `"error"` blocks submission. A `"warning"` does not.
+
+### 6.2. Inline Validation
+
+To provide a smooth user experience, inline validation messages (the error or warning text appearing below a field) **must** only be displayed after the user has interacted with and left the field. This is typically handled by triggering the validation check on the input's `blur` event.
+
+### 6.3. Summary Feature
+
+1.  **UI:** A floating action button will be present on the form page. Clicking this button opens a **Popup** or **Modal** dialog that displays the total counts for the three validation categories (e.g., `Errors: 2, Warnings: 1, Blank: 5`).
+2.  **Logic:**
+    -   **Error:** A field is an error if it fails a validation rule with `level: "error"`.
+    -   **Warning:** A field is a warning if it fails a validation rule with `level: "warning"`.
+    -   **Blank:** A field is blank if it is currently visible on the form, is not `required` (or `requiredIf` is not met), and is empty.
+3.  **Interaction Flow:**
+    -   Clicking a category in the summary popup (e.g., "Errors") that has a count greater than zero will close the popup.
+    -   Immediately after, a **Sheet** will slide up from the bottom of the screen.
+    -   This sheet will contain a list of all the specific questions belonging to the selected category.
+    -   Clicking on a question in the sheet will smoothly scroll the main form to that specific question, focusing it if possible. This includes scrolling to questions within a nested roster.
+
+### 6.4. Roster Validation IDs
+
+To uniquely identify each question within a repeating roster, the validation engine will use a dot-notation path for question IDs. This path is constructed as `rosterId.index.questionId`.
+
+-   **Example:** For a roster with `id: "anggota_rumah_tangga"`, the `nama_art` question for the first person in the roster will have a validation ID of `anggota_rumah_tangga.0.nama_art`.
+
+### 6.5. PPL Final Visit Status
+(This feature is implemented as a question type within the form schema, typically a 'select' or 'radio' input.)
+
+The form must provide a mechanism for PPLs to record the final outcome of a visit, distinct from submission. This will typically be a select input or a set of radio buttons with predefined options (e.g., 'Selesai Dicacah', 'Responden Menolak', 'Keluarga Pindah', 'Rumah Kosong', 'Tidak Ditemukan').
+If a status other than 'Selesai Dicacah' is selected, the remaining questions in the form should be disabled, and an optional notes field may be required.
+
+### 6.6. PPL New Assignment Creation
+
+For details on the PPL New Assignment Creation feature, including its functional and technical specifications, please refer to the dedicated document: **`ppl-new-assignment-creation.md`**.
+
+## 7. Dynamic Assignment List Rendering
+
+This section specifies the functionality for rendering a dynamic, interactive table on the `AssignmentListPage.vue`, driven by the `assignment_table_columns` property of the `form_schema`.
+
+### 6.1. Column Configuration
+
+The behavior and appearance of the assignment list are controlled by the array of column objects in `assignment_table_columns`. For the detailed structure of a column object, refer to the `kegiatan_statistiks` table definition in `spec/db.md`. The key properties are:
+
+-   `key`: A dot-notation path to the data within the assignment or its response (e.g., `prefilled.nama_krt`, `responses.B1.R4`).
+-   `label`: The column header text.
+-   `type`: The data type (`string`, `number`, `date`, `boolean`, `status_lookup`) used for formatting, sorting, and filtering.
+-   `default`: A boolean indicating if the column should be visible in the default, collapsed row view.
+-   `sortable`: A boolean indicating if the list can be sorted by this column.
+-   `filterable`: A boolean indicating if the column can be used for filtering.
+
+**Column Order:** The display order of columns in the table is determined by the order of objects in the `assignment_table_columns` array.
+
+### 6.2. UI Layout: Accordion Table
+
+The assignment list will be rendered as an "accordion table" to accommodate a large number of columns on a mobile screen.
+
+-   **Default (Collapsed) View:** Each assignment is a single row displaying only the columns marked with `"default": true`.
+-   **Expanded View:** Clicking anywhere on a row expands that row to reveal a vertical list of all other available columns for that assignment, displayed as "Label: Value" pairs.
+
+### 6.3. Sorting
+
+-   If a column is marked as `"sortable": true`, its header in the table will be interactive.
+-   Tapping a header will sort the entire list of assignments by that column's value.
+-   Tapping the same header again will reverse the sort order (ascending/descending).
+-   All sorting will be performed client-side on the data available in the `dashboardStore` for instant feedback.
+
+### 6.4. Filtering
+
+-   A "Filter" button will be present on the `AssignmentListPage`.
+-   Tapping this button will open a modal dialog for building a filter query.
+-   The user can add one or more filter conditions.
+-   For each condition, the user selects a field from a list of all columns marked `"filterable": true`.
+-   The UI for entering the filter value will adapt based on the column's `type`:
+    -   `string`: A text input for "contains" filtering.
+    -   `number`, `date`: Inputs for a numeric or date range.
+    -   `boolean`, `status_lookup`: A dropdown list for selecting one or more predefined values.
+-   All filtering will be performed client-side.
+
+### 6.5. User Preferences
+
+-   To enhance usability, user preferences for the assignment list will be stored locally.
+-   This includes which columns are toggled for the default view and the current sort order.
+-   These preferences will be saved in the `app_metadata` table in IndexedDB, keyed by the activity ID, ensuring they persist between sessions for each specific activity.
+
+### 6.6. Search
+
+-   To provide quick access, a real-time search functionality is implemented directly on the `AssignmentListPage`.
+-   **UI:** A search icon in the navbar enables an expandable search bar.
+-   **Logic:** The search is performed client-side as the user types. It is case-insensitive and matches the search term against the values of all columns marked as `"filterable": true` in the `form_schema`.
+-   This allows users to rapidly find assignments by typing any relevant information, such as a family name, status, or any other data point made filterable in the schema.
+
+--- END OF FILE: spec\dynamic-form-engine.md ---
+
+
+
+========================================================================
+## FILE: spec\ppl-new-assignment-creation.md
+========================================================================
+
+# Specification: PPL New Assignment Creation
+
+## 1. Overview
+
+This document details the full implementation of the "PPL New Assignment Creation" feature, allowing PPLs to create new top-level assignments directly from the PWA. This feature is designed with a strong emphasis on **offline-first capabilities** and **immediate local visibility** of newly created assignments. It aligns with "Scenario A: Penambahan Unit Observasi Baru di Lapangan (Saat Listing)" described in `studi-kasus-kegiatan.md`.
+
+The revised flow involves navigating directly to the `InterviewFormPage.vue` in a "create mode". As the PPL enters data, the **assignment's label is dynamically generated** based on a pre-defined template in the form's schema, replacing generic names with meaningful identifiers in real-time. The photo handling follows a two-step process: photos are uploaded separately to a media endpoint, and only the photo ID is referenced in the assignment data. Crucially, newly created assignments—with their dynamically generated labels—are immediately saved to the local IndexedDB and are visible in the `AssignmentListPage`.
+
+## 2. Functional Requirements
+
+*   PPLs must be able to initiate the creation of a new assignment from the `AssignmentListPage.vue`.
+*   A Floating Action Button (FAB) will be displayed on `AssignmentListPage.vue` if the `Kegiatan Statistik` allows new assignment creation.
+*   Clicking the FAB will navigate directly to `InterviewFormPage.vue` in a "create mode".
+*   The `InterviewFormPage.vue` will initialize a new, empty assignment with a `PENDING` status and a default label (e.g., "Penugasan Baru").
+*   **Dynamic Labeling:** As the PPL enters data, the `assignment_label` must be automatically and reactively updated based on the `assignment_label_template` defined in the `form_schema`. (See `spec/dynamic-form-engine.md` for details).
+*   Geographical data for the new assignment will be pre-filled based on the context from which it was created.
+*   The process must support full offline operation.
+*   The newly created assignment, with its dynamically updated label, should appear in the PPL's assignment list immediately after local creation.
+*   Only PPLs are allowed to create new assignments.
+
+## 3. Technical Specification
+
+### 3.1. Frontend Changes
+
+#### 3.1.1. `frontend-pwa/src/views/InterviewFormPage.vue`
+
+*   **Purpose:** Handle the creation of new assignments, data collection, and dynamic label generation.
+*   **Changes:**
+    *   Detect "create mode" from route parameters.
+    *   If in "create mode", call `formStore.initializeNewAssignment`.
+    *   **Watch for changes** in any of the fields used as variables in the `form_schema.assignment_label_template`.
+    *   On change, call a new action in the `formStore` (e.g., `updateAssignmentLabel`) to trigger the re-computation and saving of the new label.
+
+#### 3.1.2. `frontend-pwa/src/js/stores/formStore.ts`
+
+*   **Purpose:** Handle the business logic for initializing, saving, and submitting new assignments, including their dynamic labels.
+*   **Changes:**
+    *   The `initializeNewAssignment` action will create a new assignment object with a default `assignment_label` (e.g., "Penugasan Baru"), save it to Dexie.js, and add it to the `dashboardStore` for UI reactivity.
+    *   A new **`updateAssignmentLabel`** action will be created. This action will:
+        1.  Get the current `assignment_label_template` from the active `form_schema`.
+        2.  Get the current `responses` object for the form.
+        3.  Use the `logicEngine` to resolve any complex/derived placeholder values (e.g., finding the KRT's name from a roster and putting it in a top-level `krt_name` field).
+        4.  Substitute the placeholders in the template with their corresponding values from the `responses`.
+        5.  Update the `assignment_label` on the `Assignment` object in the store.
+        6.  Debounce the save operation to Dexie.js to persist the new label efficiently.
+
+#### 3.1.3. `frontend-pwa/src/js/stores/dashboardStore.ts`
+
+*   **Purpose:** Provide activity data and facilitate immediate local visibility.
+*   **Changes:**
+    *   No major changes are required for the dynamic label feature itself, as the reactivity is handled through the `Assignment` object which is already in its `assignments` array. When the `assignment_label` is updated by the `formStore`, the change will be reflected automatically in `AssignmentListPage.vue`.
+
+(Other sections of the technical specification remain largely the same, as the dynamic label is primarily a frontend logic enhancement before data submission.)
+
+## 4. Offline Support and Synchronization
+
+*   The entire dynamic labeling process is designed to work **offline by default**, as it only involves the `form_schema` and data already present on the client.
+*   The `SyncEngine` will simply submit the final, generated `assignment_label` to the backend as part of the `createAssignment` payload. No changes to the sync process are required.
+
+## 5. Testing Considerations
+
+*   **Unit Tests:**
+    *   `formStore.ts`: Test the `updateAssignmentLabel` action thoroughly. Verify that it correctly parses templates, handles missing values gracefully, and correctly derives complex values from rosters via the logic engine.
+*   **Integration Tests:**
+    *   Verify that as a user types into a field that is part of the label template, the label in the `AssignmentListPage` updates in real-time.
+    *   Test with complex templates that involve both simple fields and fields derived from roster logic.
+*   **Manual Testing:**
+    *   End-to-end flow: Create a new assignment and ensure its name changes as expected while filling out the form.
+    *   Verify the updated label persists after closing and reopening the app before submission.
+
+--- END OF FILE: spec\ppl-new-assignment-creation.md ---
+
+
+
+========================================================================
 ## FILE: spec\studi-kasus-kegiatan.md
 ========================================================================
 
@@ -701,7 +1150,7 @@ Ini adalah tahap pertama yang dimodelkan sebagai `Kegiatan Statistik` mandiri di
     - Untuk setiap keluarga yang ditemui, PPL membuat entri data baru.
     - **Pengambilan Geotag:** Saat PPL berinteraksi dengan field geotag, PWA akan mengambil data `latitude`, `longitude`, dan `accuracy` dari perangkat.
     - **Pengambilan Foto:** Saat PPL berinteraksi dengan field foto, PWA akan membuka kamera. Setelah foto diambil dan dioptimalkan, PWA akan menanganinya untuk sinkronisasi.
-    - **Proses Sinkronisasi Foto:** Proses `SyncEngine` harus cerdas. Ia akan mengunggah file foto ke endpoint media khusus. Server akan menyimpan file tersebut dan mengembalikan sebuah ID unik. `SyncEngine` kemudian akan memperbarui data respons dengan ID referensi ini. Hasilnya, `responses` akan menyimpan _referensi unik_ (misalnya, sebuah ID) ke file foto yang telah diunggah, bukan file foto itu sendiri.
+    - **Proses Sinkronisasi Foto:** Proses `SyncEngine` harus cerdas. Ia akan mengunggah file foto ke endpoint media khusus. Server akan menyimpan file tersebut dan mengembalikan sebuah ID unik. `SyncEngine` kemudian akan memperbarui data respons dengan ID referensi ini. Hasilnya, `responses` akan menyimpan _referensi unik_ (misalnya, sebuah ID) ke file foto yang telah diunggah, bukan file foto itu sendiri. (Lihat `AssignmentPhotoController`)
 
 3.  **Output & Hasil Akhir:**
     - Hasil dari fase Listing adalah `assignment_responses` yang bersih dan tervalidasi, di mana setiap record berisi data identitas keluarga, objek koordinat geospasial, dan ID referensi ke file foto.
@@ -749,11 +1198,13 @@ Kegiatan lapangan tidak pernah berjalan mulus sepenuhnya. Platform Cerdas harus 
 ### Skenario A: Penambahan Unit Observasi Baru di Lapangan (Saat Listing)
 
 - **Situasi:** Seorang PPL sedang melakukan listing di sebuah SLS. Ia menemukan sebuah rumah baru yang dihuni oleh satu keluarga yang belum pernah terdata sebelumnya.
-- **Implikasi Fitur untuk Cerdas Mobile (PWA):**
-  - Antarmuka PWA dalam `Assignment` Listing (yang berbasis wilayah/SLS) **wajib memiliki fitur "Tambah Keluarga Baru"**.
-  - Fitur ini memungkinkan PPL untuk membuat dan mengisi satu set kuesioner Listing baru (termasuk geotag dan foto) yang akan terasosiasi dengan `Assignment` SLS tersebut. PPL harus bisa melakukan ini berulang kali untuk setiap keluarga baru yang ditemukannya.
-- **Implikasi Fitur untuk Cerdas-SM (Backend):**
-  - Backend harus mampu menerima dan memproses data dari entitas-entitas baru yang dibuat secara dinamis oleh PPL di lapangan.
+- **Implikasi Fitur untuk Cerdas Mobile (PWA) & Cerdas-SM (Backend):**
+  - PWA harus menyediakan fitur "Tambah Keluarga Baru" (atau "Tambah Assignment Baru") di halaman daftar tugas (`AssignmentListPage`).
+  - Saat PPL memulai, sebuah `Assignment` baru dibuat secara lokal dengan label awal, misalnya, "Penugasan Baru".
+  - `form_schema` untuk kegiatan Listing ini akan memiliki `assignment_label_template` yang dikonfigurasi, contohnya: `"{nama_krt} - (No. Urut Bangunan: {no_urut_bangunan})"`.
+  - Saat PPL mengisi formulir dan mengetik nama kepala keluarga (misalnya, "Budi Santoso") dan nomor urut bangunan (misalnya, "15"), PWA akan **secara dinamis memperbarui label assignment tersebut secara real-time**.
+  - Di daftar tugas, PPL akan melihat label berubah dari "Penugasan Baru" menjadi "Budi Santoso - (No. Urut Bangunan: 15)".
+  - Implementasi teknis yang lebih detail untuk alur kerja ini, termasuk penanganan data offline dan sinkronisasi, dijelaskan dalam dokumen terpisah: **`ppl-new-assignment-creation.md`**.
 
 ### Skenario B: Penanganan Unit Observasi Tidak Ditemukan (Saat Pendataan)
 
@@ -806,773 +1257,6 @@ Berdasarkan studi kasus ini, berikut adalah daftar fitur non-negosiabel yang har
 
 
 --- END OF FILE: spec\studi-kasus-kegiatan.md ---
-
-
-
-========================================================================
-## FILE: frontend-pwa\.gemini\commands\epic-core-workflow\generate-activity-dashboard-page.toml
-========================================================================
-
-# Perintah untuk menghasilkan Halaman Dasbor Kegiatan yang menampilkan statistik dan opsi sinkronisasi.
-description = "Generate the Activity Dashboard Page, which shows statistics, countdown, and advanced sync options for a selected activity."
-
-prompt = """
-Generate a Vue 3 component file located at `src/views/ActivityDashboardPage.vue`. This is the central hub for a user within a single statistical activity. It displays summary statistics and provides crucial data synchronization controls. The page must be fully offline-first for displaying statistics.
-
-**1. Technical Requirements:**
-- Use `<script setup>` with the Vue 3 Composition API.
-- UI must be built with Framework7-Vue components (`<f7-page>`, `<f7-navbar>`, `<f7-block>`, `<f7-card>`, `<f7-button>`, `<f7-actions>`).
-- Inject and use core singletons: `OfflineService` and `SyncEngine`.
-- Use `useRoute` to get the `activityId` from the URL parameter.
-
-**2. Component Logic (`<script setup>`):**
-- **State Management:**
-  - `const route = useRoute();`
-  - `const activityId = computed(() => route.params.activityId as string);`
-  - `const stats = ref({ total: 0, assigned: 0, submitted: 0, approved: 0, rejected: 0 });`: Holds the calculated statistics.
-  - `const activityDetails = ref<ActivityDetails | null>(null);`: To hold activity metadata like end dates. Define a placeholder interface `ActivityDetails { name: string; end_date: string; extended_end_date: string; }`.
-  - `const remainingDays = ref<number>(0);`: To display the countdown.
-  - `const isLoading = ref<boolean>(true);`: For initial data loading.
-  - `const hasInitialData = ref<boolean>(false);`: To track if the massive initial download has been performed for this activity.
-
-- **`onMounted` Lifecycle Hook:**
-  - Call a `loadDashboardData` method.
-
-- **Methods:**
-  - `async function loadDashboardData()`:
-    1. Set `isLoading = true`.
-    2. Check `OfflineService` to see if assignments for this `activityId` exist. `hasInitialData.value = await OfflineService.hasDataForActivity(activityId.value);`.
-    3. If `hasInitialData.value` is true:
-       - Fetch all assignments from `OfflineService.getAllAssignments(activityId.value)`.
-       - Fetch activity metadata (like end dates) from `OfflineService`.
-       - **Calculate statistics locally**: Iterate through the assignments to populate the `stats.value` object.
-       - **Calculate remaining days**: Implement logic based on `extended_end_date` and `end_date`.
-    4. Set `isLoading = false`.
-  
-  - `async function performInitialDownload()`:
-    - This is for users who have no data locally for this activity.
-    - It should display a loading indicator/overlay.
-    - Call a new method `SyncEngine.performInitialDownloadForActivity(activityId.value)`.
-    - After completion, reload the dashboard by calling `loadDashboardData()`.
-  
-  - `function openSyncOptions()`:
-    - This method opens an `<f7-actions>` sheet with the two sync options.
-  
-  - `async function handleSync(syncType: 'delta' | 'full')`:
-    - This method is called from the actions sheet.
-    - If `syncType` is 'delta', call `SyncEngine.performDeltaSync(activityId.value)`. Show a toast on completion.
-    - If `syncType` is 'full':
-      1. Show a strong confirmation dialog (`f7.dialog.confirm`).
-      2. If confirmed, call `SyncEngine.performFullOverwriteSync(activityId.value)`.
-      3. After completion, reload the dashboard data.
-
-**3. Template Structure (`<template>`):**
-- **Root Element:** `<f7-page>`.
-- **Navbar:** `<f7-navbar :title="activityDetails?.name || 'Dasbor'" back-link="Beranda">`.
-
-- **Main Content:**
-  - **Initial Download Offer (v-if="!hasInitialData && !isLoading"):**
-    - Display a large card (`<f7-card>`) with a message: "Data untuk kegiatan ini belum diunduh. Unduh data sekarang untuk memulai kerja offline."
-    - A prominent button `<f7-button large fill @click="performInitialDownload">Unduh Data Kegiatan</f7-button>`.
-  
-  - **Dashboard View (v-else-if="hasInitialData && !isLoading"):**
-    - **Countdown Block:**
-      - An `<f7-block-title>`: "Sisa Waktu Pelaksanaan".
-      - An `<f7-card>` displaying `remainingDays.value` in a large font with the label "Hari".
-    - **Statistics Block:**
-      - An `<f7-block-title>`: "Ringkasan Statistik".
-      - An `<f7-block strong inset>` which is `clickable` and links to the location summary page: `@click="$router.push(`/activity/${activityId}/locations`)`"
-      - Inside, display the stats using a grid or list. Example: `<div><h3>{{ stats.total }}</h3><p>Total Tugas</p></div>`.
-    - **Sync Button:**
-      - An `<f7-block>` containing a single button: `<f7-button large fill @click="openSyncOptions">Sinkronisasi Data</f7-button>`.
-
-- **Actions Sheet (Popup):**
-  - Place this at the root level of the template.
-  - `<f7-actions id="sync-actions">`
-    - `<f7-actions-group>`
-      - `<f7-actions-label>Pilih Jenis Sinkronisasi</f7-actions-label>`
-      - `<f7-actions-button @click="handleSync('delta')">Sync Perubahan Assignment</f7-actions-button>`
-      - `<f7-actions-button color="red" @click="handleSync('full')">Sync Full Assignment (Timpa Data Lokal)</f7-actions-button>`
-    - `<f7-actions-group>`
-      - `<f7-actions-button bold>Batal</f7-actions-button>`
-    - `</f7-actions-group>`
-  - `</f7-actions>`
-"""
-
-
---- END OF FILE: frontend-pwa\.gemini\commands\epic-core-workflow\generate-activity-dashboard-page.toml ---
-
-
-
-========================================================================
-## FILE: frontend-pwa\.gemini\commands\epic-core-workflow\generate-assignment-table-page.toml
-========================================================================
-
-# Perintah untuk menghasilkan Halaman Tabel Assignment yang menampilkan daftar tugas terfilter dengan kolom dinamis.
-description = "Generate the Assignment Table Page, which displays a filtered list of assignments in a table with dynamically configured columns from the form schema."
-
-prompt = """
-Generate a Vue 3 component file located at `src/views/AssignmentTablePage.vue`. This page displays a detailed, tabular list of assignments that belong to a specific location group selected on the previous page. Its columns are dynamically rendered based on the `form_schema`.
-
-**1. Technical Requirements:**
-- Use `<script setup>` with the Vue 3 Composition API.
-- The UI MUST be built with Framework7-Vue components. For the table, using `<f7-data-table>` is highly recommended for structure and styling.
-- Inject `OfflineService`.
-- Use `useRoute` to get both the `activityId` and the `locationKey` from the URL parameters.
-
-**2. Component Logic (`<script setup>`):**
-- **State Management:**
-  - `const route = useRoute();`
-  - `const activityId = computed(() => route.params.activityId as string);`
-  - `const locationKey = computed(() => route.params.locationKey as string);`
-  - `const filteredAssignments = ref<AssignmentResponse[]>([]);`: To store the final list of assignments to be displayed.
-  - `const formSchema = ref<FormSchema | null>(null);`: Needed to get the table column configuration.
-  - `const tableHeaders = ref<string[]>([]);`: A reactive ref to hold the header labels for the table.
-  - `const tableColumnsConfig = ref<any[]>([]);`: Holds the column configuration array from the schema.
-  - `const isLoading = ref<boolean>(true);`
-
-- **Core Logic - Filtering and Data Shaping:**
-  - Create a method `async function loadAndFilterData()` that will be called in `onMounted`. This method must:
-    1. Set `isLoading = true`.
-    2. In parallel, fetch:
-       a. All assignments for the activity from `OfflineService.getAllAssignments(activityId.value)`.
-       b. The form schema from `OfflineService.getFormSchema(activityId.value)`.
-    3. **Filtering Logic:**
-       - Iterate through all fetched assignments.
-       - For each assignment, check if its location code (across all `level_x_code` fields defined in `formSchema.value.assignment_table_grouping_levels`) matches the `locationKey.value` from the URL.
-       - Push all matching assignments into `filteredAssignments.value`.
-    4. **Column Configuration Logic:**
-       - Read the `formSchema.value.assignment_table_columns` array and store it in `tableColumnsConfig.value`.
-       - From this config, extract just the `label` for each column and populate `tableHeaders.value`.
-    5. Set `isLoading = false`.
-
-- **`onMounted` Lifecycle Hook:**
-  - Call `loadAndFilterData()`.
-
-- **Methods:**
-  - `function getCellValue(assignment, columnKey: string)`:
-    - This is a crucial utility function for the template to resolve the cell value dynamically.
-    - The `columnKey` will be a string like `"prefilled.nama_krt"` or `"status"`.
-    - The function must parse this key.
-    - If the key is `"status"`, it should return `assignment.status`.
-    - If the key starts with `"prefilled."`, it should access the nested value, e.g., `assignment.prefilled_data[key.split('.')[1]]`.
-    - It should handle cases where the value is null or undefined gracefully, returning an empty string or a placeholder.
-  - `function getStatusColor(status: string): string`: A utility to return a color name for the status chip.
-
-**3. Template Structure (`<template>`):**
-- **Root Element:** `<f7-page>`.
-- **Navbar:** `<f7-navbar title="Daftar Assignment" back-link="Ringkasan">`.
-
-- **Main Content:**
-  - **Loading State:**
-    - Use `v-if="isLoading"` to display a `f7-data-table` skeleton.
-  - **Data Table (`<f7-data-table>`):**
-    - Use `v-else`. The `f7-data-table` component is the main element.
-    - **Table Header (`<thead>`):**
-      - `<tr>`
-        - Loop through `tableHeaders`: `<th class="label-cell" v-for="header in tableHeaders">{{ header }}</th>`.
-      - `</tr>`
-    - **Table Body (`<tbody>`):**
-      - Loop through `filteredAssignments`: `<tr v-for="assignment in filteredAssignments" :key="assignment.assignmentId">`.
-      - This `<tr>` should be clickable, navigating to the form page: `@click="$router.push(`/activity/${activityId}/assignment/${assignment.assignmentId}`)"`.
-      - **Dynamic Cells (`<td>`):**
-        - Inside the `<tr>`, loop through the `tableColumnsConfig` to ensure the cells are rendered in the correct order.
-        - `<td class="label-cell" v-for="column in tableColumnsConfig">`
-          - **Conditional Rendering for Status:**
-            - Use `v-if="column.key === 'status'"` to render the status differently, e.g., with an `<f7-chip>`.
-            - `<f7-chip :text="getCellValue(assignment, column.key)" :color="getStatusColor(getCellValue(assignment, column.key))" />`
-          - **Default Rendering for other cells:**
-            - Use `v-else` to display the plain text value.
-            - `{{ getCellValue(assignment, column.key) }}`
-        - `</td>`
-      - `</tr>`
-
-"""
-
-
---- END OF FILE: frontend-pwa\.gemini\commands\epic-core-workflow\generate-assignment-table-page.toml ---
-
-
-
-========================================================================
-## FILE: frontend-pwa\.gemini\commands\epic-core-workflow\generate-home-page.toml
-========================================================================
-
-# Perintah untuk menghasilkan Halaman Beranda (Daftar Kegiatan) setelah pengguna login.
-description = "Generate the Home Page component that appears after login, displaying a list of the user's assigned statistical activities."
-
-prompt = """
-Generate a Vue 3 component file located at `src/views/HomePage.vue`. This component serves as the main landing page after a user successfully logs in. Its primary function is to fetch and display a list of all statistical activities the user is a member of.
-
-**1. Technical Requirements:**
-- The component **MUST** use the `<script setup>` syntax with the Composition API.
-- The entire UI **MUST** be built using Framework7-Vue components (`<f7-page>`, `<f7-navbar>`, `<f7-list>`, `<f7-list-item>`, `<f7-chip>`, etc.).
-- The component must inject and use the `ApiClient` singleton to fetch data.
-- It should use `vue-router`'s `useRouter` for navigation.
-
-**2. Component Logic (`<script setup>`):**
-- **State Management:**
-  - `const activities = ref<Activity[]>([]);`: A reactive ref to store the list of activities fetched from the server. Define a placeholder `Activity` interface for type safety, e.g., `{ id: string; name: string; year: number; user_role: 'PPL' | 'PML'; status: string; }`.
-  - `const isLoading = ref<boolean>(true);`: To control the display of a loading skeleton.
-  - `const router = useRouter();`: To handle navigation programmatically.
-
-- **`onMounted` Lifecycle Hook:**
-  - Immediately set `isLoading` to `true`.
-  - Call a new method on the `ApiClient`, `getActivitiesForUser()`, which is expected to return an array of the user's activities.
-  - Wrap the API call in a `try...catch...finally` block.
-    - On success, populate `activities.value`.
-    - On error, log the error to the console and potentially show a toast notification.
-    - In the `finally` block, set `isLoading` to `false`.
-
-- **Methods:**
-  - `function handleActivityClick(activityId: string)`: A method that navigates the user to the specific activity's dashboard page. It should call `router.push(`/activity/${activityId}/dashboard`);`.
-  - `function getRoleChipColor(role: string): string`: Returns 'green' if role is 'PPL', 'blue' if 'PML', and 'gray' otherwise.
-  - `function getStatusChipColor(status: string): string`: Returns a color based on the activity status (e.g., 'orange' for 'Berlangsung', 'gray' for 'Selesai').
-
-**3. Template Structure (`<template>`):**
-- **Root Element:** `<f7-page>`.
-- **Navbar:** Use `<f7-navbar title="Beranda">`.
-- **Main Content:**
-  - **Loading State:**
-    - Use `v-if="isLoading"` to display a skeleton loader. This should be an `<f7-list>` with several `<f7-list-item>` elements using skeleton classes like `skeleton-text`.
-  - **Empty State:**
-    - Use `v-else-if="!isLoading && activities.length === 0"` to display a message. Render an `<f7-block-title>` and an `<f7-block>` with a clear message like "Anda tidak memiliki kegiatan aktif saat ini. Silakan hubungi administrator Anda."
-  - **Activities List:**
-    - Use `v-else` with an `<f7-list media-list>` to render the activities.
-    - Loop through the list using `v-for="activity in activities" :key="activity.id"`.
-    - Each item should be an `<f7-list-item>` that is `clickable` and triggers `@click="handleActivityClick(activity.id)"`.
-    - **Content of each list item:**
-      - **Title:** The `title` attribute should be `{{ activity.name }}`.
-      - **Footer (for details):** Use the `footer` slot to display details using `<f7-chip>` components for better visual separation.
-        - A chip for the year: `<f7-chip :text="activity.year" />`
-        - A chip for the role: `<f7-chip :text="activity.user_role" :color="getRoleChipColor(activity.user_role)" />`
-        - A chip for the status: `<f7-chip :text="activity.status" :color="getStatusChipColor(activity.status)" />`
-
-"""
-
-
---- END OF FILE: frontend-pwa\.gemini\commands\epic-core-workflow\generate-home-page.toml ---
-
-
-
-========================================================================
-## FILE: frontend-pwa\.gemini\commands\epic-core-workflow\generate-location-summary-page.toml
-========================================================================
-
-# Perintah untuk menghasilkan Halaman Ringkasan Lokasi yang mengelompokkan assignment berdasarkan hierarki wilayah.
-description = "Generate the Location Summary Page, which groups assignments hierarchically by location codes, from level 5 down to level 2."
-
-prompt = """
-Generate a Vue 3 component file located at `src/views/LocationSummaryPage.vue`. The purpose of this page is to take a flat list of all assignments for an activity and display them grouped by geographical location in a hierarchical manner.
-
-**1. Technical Requirements:**
-- Use `<script setup>` with the Vue 3 Composition API.
-- UI must be built with Framework7-Vue components (`<f7-page>`, `<f7-navbar>`, `<f7-card>`, etc.).
-- Inject `OfflineService` to fetch all necessary data.
-- Use `useRoute` to get the `activityId`.
-
-**2. Component Logic (`<script setup>`):**
-- **State Management:**
-  - `const route = useRoute();`
-  - `const activityId = computed(() => route.params.activityId as string);`
-  - `const allAssignments = ref<AssignmentResponse[]>([]);`: To store the raw list of assignments.
-  - `const formSchema = ref<FormSchema | null>(null);`: To get the grouping levels and level definitions.
-  - `const masterSls = ref<MasterSlsData | null>(null);`: To store the master SLS data for mapping codes to names.
-  - `const isLoading = ref<boolean>(true);`
-
-- **Core Logic - Hierarchical Grouping (CRUCIAL):**
-  - Create a `computed` property named `groupedLocations`. This is the most complex part of the component.
-  - This computed property must:
-    1. Return an empty array if `formSchema.value`, `allAssignments.value`, or `masterSls.value` are not yet loaded.
-    2. Read the `assignment_table_grouping_levels` array from `formSchema.value` (e.g., `['level_5_code', 'level_4_code', ...]`).
-    3. Create a Map or an object to store the groups, e.g., `const groups = new Map();`.
-    4. Iterate through `allAssignments.value`. For each assignment:
-       a. Iterate through the `grouping_levels` from the schema.
-       b. Find the first, most specific level code that exists on the assignment (e.g., check `assignment.level_5_code` first).
-       c. If found, this code becomes the `groupKey`.
-       d. If a group for this `groupKey` doesn't exist in the `groups` map, create it. The group object should contain: `groupKey`, `groupLevel` (e.g., 'level_5_code'), `displayName`, `assignments` (an array), and stats (`total`, `submitted`, etc.).
-       e. **To get `displayName`**: Use the `groupKey` and `groupLevel` to look up the human-readable name from the `masterSls` data and the `level_definitions` in the schema. For example: "[SLS] 001 - Blok A".
-       f. Push the current assignment into the `group.assignments` array and update the group's stats.
-    5. Convert the `groups` map into an array and return it.
-
-- **`onMounted` Lifecycle Hook:**
-  - Call a `loadData` method.
-
-- **Methods:**
-  - `async function loadData()`:
-    1. Set `isLoading = true`.
-    2. In parallel (using `Promise.all`), fetch:
-       a. All assignments: `OfflineService.getAllAssignments(activityId.value)`.
-       b. The form schema: `OfflineService.getFormSchema(activityId.value)`.
-       c. The master SLS data: `OfflineService.getMasterData('MASTER_SLS')`.
-    3. Populate the respective `ref` variables.
-    4. Set `isLoading = false`.
-  
-  - `function getStatsChip(group): { text: string; color: string }`: A utility to return the text and color for a summary chip on the card, e.g., "5 / 10 Selesai".
-
-**3. Template Structure (`<template>`):**
-- **Root Element:** `<f7-page>`.
-- **Navbar:** `<f7-navbar title="Ringkasan per Wilayah" back-link="Dasbor">`.
-
-- **Main Content:**
-  - **Loading State:**
-    - Use `v-if="isLoading"` to display a skeleton loader (e.g., several `f7-card` skeletons).
-  - **Empty State:**
-    - Use `v-else-if="groupedLocations.length === 0"` with a message like "Tidak ada tugas yang dapat ditampilkan."
-  - **Location Groups List:**
-    - Use `v-else` to loop through the `groupedLocations` computed property.
-    - `v-for="group in groupedLocations" :key="group.groupKey"`.
-    - **Render each group as a `clickable` `<f7-card-header>` and `<f7-card-content>` inside an `<f7-card>`:**
-      - The entire card should be a link or have a click handler that navigates to the assignment table page for that group. The navigation URL must include the group key: `$router.push(`/activity/${activityId}/assignments/by-location/${group.groupKey}`)`.
-      - **Card Header (`<f7-card-header>`):**
-        - Display the `group.displayName` prominently.
-      - **Card Content (`<f7-card-content>`):**
-        - Display a summary of statistics for that group.
-        - Example: `<span>Total: {{ group.stats.total }}</span>`.
-        - Use an `<f7-chip>` to show progress, e.g., `<f7-chip :text="getStatsChip(group).text" :color="getStatsChip(group).color" />`.
-
-"""
-
-
---- END OF FILE: frontend-pwa\.gemini\commands\epic-core-workflow\generate-location-summary-page.toml ---
-
-
-
-========================================================================
-## FILE: frontend-pwa\.gemini\commands\generate-api-client.toml
-========================================================================
-
-description = "Generate a type-safe ApiClient class for communicating with the Laravel backend, including new methods for the activity-based workflow and specific sync strategies."
-
-prompt = """
-Generate a TypeScript class named `ApiClient` located in `src/services/api/ApiClient.ts`. This class will serve as a centralized, singleton wrapper around Axios.
-
-**1. Axios Instance Configuration & Interceptors (Tidak Berubah):**
-Create a private Axios instance configured with:
-- `baseURL` from `VITE_API_BASE_URL`.
-- `timeout` of 15,000ms.
-- Default headers for JSON.
-- **Request Interceptor:** To inject the Bearer Token from `authStore`.
-- **Response Interceptor:** To handle global errors and automatic token refresh on 401 errors.
-
-**2. Refactored Public Method Definitions:**
-Implement the following public methods, ensuring they are all `async` and properly typed.
-
-// --- Metode Otentikasi & Inisialisasi ---
-- `async login(credentials: LoginCredentials): Promise<AuthResponse>`
-/**
- * (BARU) Mengautentikasi pengguna menggunakan token dari Google.
- * Backend akan memverifikasi token ini, lalu mencari/membuat user sesuai alur kerja.
- * @param googleToken - Token ID yang diterima dari client-side Google SDK.
- * @returns {Promise<AuthResponse>} Objek yang sama dengan login password, berisi token sesi dan data user.
- */
-- async loginWithGoogle(googleToken: string): Promise<AuthResponse>
-- `async logout(): Promise<void>`
-- `async refreshToken(): Promise<RefreshTokenResponse>`
-
-/**
- * (BARU) Mengambil daftar kegiatan statistik di mana pengguna terdaftar.
- * Dipanggil oleh HomePage setelah login.
- * @returns {Promise<Activity[]>} Array ringkas dari metadata kegiatan.
- */
-- `async getActivitiesForUser(): Promise<Activity[]>`
-
-// --- Metode Sinkronisasi (Download dari Server) ---
-
-/**
- * (BARU) Mengunduh seluruh data yang diperlukan untuk memulai kerja offline pada satu kegiatan.
- * Ini adalah pengunduhan masif awal.
- * @param activityId - ID kegiatan yang akan diunduh.
- * @returns {Promise<InitialDownloadPayload>} Objek besar berisi assignments, form schema, dan master data.
- */
-- `async performInitialDownload(activityId: string): Promise<InitialDownloadPayload>`
-
-/**
- * (BARU) Mengunduh hanya perubahan (delta) yang terjadi sejak sinkronisasi terakhir.
- * @param activityId - ID kegiatan.
- * @param sinceTimestamp - ISO string timestamp dari sinkronisasi terakhir.
- * @returns {Promise<DeltaSyncPayload>} Objek berisi assignment baru, status yang diperbarui, dan editan.
- */
-- `async performDeltaSync(activityId: string, sinceTimestamp: string): Promise<DeltaSyncPayload>`
-
-/**
- * (BARU) Mengunduh ulang seluruh data untuk satu kegiatan. Digunakan untuk overwrite sync.
- * Secara fungsional, ini mungkin memanggil endpoint yang sama dengan performInitialDownload.
- * @param activityId - ID kegiatan.
- * @returns {Promise<InitialDownloadPayload>} Objek besar berisi semua data.
- */
-- `async performFullResync(activityId: string): Promise<InitialDownloadPayload>`
-
-
-// --- Metode Aksi & Upload ---
-
-/**
- * (RETAINED) Mengirim batch data assignment yang telah disubmit/diubah ke server.
- * Ini adalah proses UPLOAD.
- * @param activityId - ID kegiatan.
- * @param payload - Array berisi assignment responses.
- * @returns {Promise<SyncResult>}
- */
-- `async submitAssignmentBatch(activityId: string, payload: AssignmentResponse[]): Promise<SyncResult>`
-
-/**
- * (BARU) Memeriksa ke server tindakan apa yang diizinkan untuk assignment tertentu pada saat ini.
- * Krusial untuk tombol Approve/Reject PML. Membutuhkan koneksi online.
- * @param assignmentId - ID assignment yang akan diperiksa.
- * @returns {Promise<string[]>} Array string, e.g., ['APPROVE', 'REJECT'].
- */
-- `async getAllowedActions(assignmentId: string): Promise<string[]>`
-
-- `async uploadAssignmentPhoto(activityId: string, assignmentId: string, photo: File): Promise<FileUploadResponse>`
-  - Handles file uploads using `multipart/form-data`. This requires overriding the default JSON headers for this specific request.
-
-// --- Methods for Diagnostics ---
-- `async postErrorLogs(logs: ErrorLog[]): Promise<void>`
-
-**4. Architectural Requirements:**
-- The class must be a singleton, exporting a single pre-initialized instance.
-- Use TypeScript interfaces for all method parameters and return types to ensure type safety.
-- Include detailed JSDoc comments explaining what each method does, its parameters, and what it returns.
-"""
-
-
---- END OF FILE: frontend-pwa\.gemini\commands\generate-api-client.toml ---
-
-
-
-========================================================================
-## FILE: frontend-pwa\.gemini\commands\generate-form.toml
-========================================================================
-
-# Perintah untuk menghasilkan komponen form engine (VERSI REFACTOR).
-description = "Generate the complete, dynamic Form Engine component, now with support for read-only prefilled data and online-aware action buttons for PMLs."
-
-prompt = """
-Generate a Vue 3 component file located at `src/views/InterviewFormPage.vue`. This component must function as a **generic and reusable Form Engine** driven entirely by a `formSchema` prop.
-
-**1. Arsitektur & Ketergantungan Inti (Tidak Berubah):**
-- Vue 3 Composition API with `<script setup>`.
-- UI: Exclusively Framework7-Vue components.
-- State: Pinia for auth/master data stores.
-- Offline: All data interactions through the `OfflineService` singleton.
-- Validation: Zod for schema-driven validation.
-
-**2. Props & State Management (Diperbarui):**
-- **Props:**
-  - `activityId: string` (required)
-  - `assignmentId: string` (required)
-- **Reactive State:**
-  - `const assignmentData = ref<AssignmentResponse | null>(null);`
-  - `const formSchema = ref<FormSchema | null>(null);`
-  - `const formState = reactive({ responses: {} });`: **PENTING:** Inisialisasi `formState` dengan objek `responses` bersarang. Ini memisahkan data isian PPL dari data root `assignment`.
-  - `const isPmlMode = ref<boolean>(false);`: Untuk membedakan mode entri PPL dan mode review PML.
-  - `const allowedActions = ref<string[]>([]);`: (BARU) Untuk menyimpan aksi yang diizinkan dari server untuk PML.
-  - `const isLoading = ref<boolean>(true);`
-
-- **`onMounted` Logic (Diperbarui):**
-  - Set `isLoading` to true.
-  - Fetch `assignmentData` and `formSchema` from `OfflineService`.
-  - Check user's role. If role is 'PML', set `isPmlMode.value = true`.
-  - Initialize `formState.responses` with the existing `assignmentData.responses`.
-  - **(BARU - Logika Mode PML):** If `isPmlMode.value` is true, call a new method `fetchAllowedActions()`.
-  - Set `isLoading` to false.
-
-**3. Rendering Dinamis & Tipe Pertanyaan (Dengan Penambahan):**
-- The `<template>` must recursively render the form based on `formSchema.pages`.
-- **(BARU) Penanganan Prefilled Data:**
-  - Introduce a new question `type: "prefilled_display"`.
-  - This type will be rendered as a **read-only** `<f7-list-input>` or simple text block.
-  - Its value should be read directly from `assignmentData.value.prefilled_data` based on a key in the question's schema. It is **NOT** part of the `formState.responses` object.
-
-**4. Logika Aksi & Tombol (Sangat Diperbarui):**
-- The `<template>` must display different action buttons at the bottom based on the mode.
-- **Tombol Mode PPL (`v-if="!isPmlMode"`):**
-  - A single "Submit" button.
-  - Calls a `submitForm` method which validates the `formState.responses`, updates the assignment status to `Submitted by PPPL`, and queues it for upload via `OfflineService`.
-- **Tombol Mode PML (`v-if="isPmlMode"`):**
-  - A block of buttons that are rendered conditionally using `v-for="action in allowedActions"`.
-  - Example: `<f7-button v-if="allowedActions.includes('APPROVE')" @click="handlePmlAction('approve')">Approve</f7-button>`.
-  - `<f7-button v-if="allowedActions.includes('REJECT')" color="red" @click="handlePmlAction('reject')">Reject</f7-button>`.
-  - If `allowedActions` is empty and the user is online, it could show a message "Memverifikasi aksi...". If offline, "Aksi tidak tersedia saat offline."
-- **Methods:**
-  - `async function fetchAllowedActions()`:
-    - This is called in `onMounted` for PMLs.
-    - It must call `ApiClient.getAllowedActions(props.assignmentId)`.
-    - On success, it populates `allowedActions.value`.
-  - `async function handlePmlAction(actionType: 'approve' | 'reject')`:
-    - If 'reject', it must show a dialog (`f7.dialog.prompt`) to get the rejection `notes`. If the notes are empty, cancel the action.
-    - Updates the assignment status locally (`Approved by PML` or `Rejected by PML`).
-    - Queues the action for upload via `OfflineService.queueForSync(...)`.
-    - Navigates back.
-
-**5. Fitur Inti & Mitigasi Risiko Fungsional (Diperbarui):**
-- **Auto-Save:**
-  - The `watch` function now watches `formState.responses` specifically, and on change, saves the entire `assignmentData` object (which contains the updated responses) back to `OfflineService`.
-- **Role-Based Field Access:**
-  - A field is disabled if `isPmlMode` is true, UNLESS the question schema's `editableBy` property includes the 'PML' role.
-
-**6. Arsitektur & Ketergantungan Lainnya (Tidak Berubah):**
-- Penggunaan Zod untuk validasi, penanganan master data, dll, tetap sama.
-- The engine must still support rosters, conditional logic (`showIf`, `requiredIf`), etc.
-"""
-
-
---- END OF FILE: frontend-pwa\.gemini\commands\generate-form.toml ---
-
-
-
-========================================================================
-## FILE: frontend-pwa\.gemini\commands\generate-login-page.toml
-========================================================================
-
-# Perintah untuk menghasilkan halaman login pengguna, kini dengan dukungan untuk email/password tradisional dan Google Single Sign-On.
-description = "Generate the user login page component, now with support for both traditional email/password and Google Single Sign-On."
-
-prompt = """
-Generate a Vue 3 component file located at `src/views/LoginPage.vue`.
-
-**1. Technical Requirements (CRUCIAL):**
-- The component **MUST** use the `<script setup>` syntax with the Composition API.
-- The entire UI **MUST** be built using Framework7-Vue components. This includes `<f7-page>`, `<f7-login-screen>`, `<f7-list>`, `<f7-list-input>`, and `<f7-button>`.
-- All component state (like `username`, `password`, and `isLoading`) **MUST** be managed with reactive `ref()` variables.
-
-**2. Component Logic:**
-- Create `ref` variables for `username`, `password`, `isPasswordLoading`, and `isGoogleLoading`.
-- Import and use the `ApiClient` singleton.
-- Import and use the Pinia `authStore`.
-- Import and use `vue-router`.
-- Implement `handlePasswordLogin()`: a method for the traditional form submission. It should set `isPasswordLoading` to true, call the API, handle success (save token, navigate to '/home'), handle errors, and finally set `isPasswordLoading` to false.
-- Implement `handleGoogleLogin()`: a method for the Google login button. This method will be responsible for initiating the client-side Google authentication flow. Upon receiving a token from Google, it will call a specific method on the `ApiClient` (e.g., `loginWithGoogle(token)`). It should manage the `isGoogleLoading` state.
-
-**3. Template Structure:**
-- Use an `<f7-page login-screen>` as the root element.
-- Include a title like "Cerdas CAPI".
-- **Traditional Login Form:**
-  - Use an `<f7-list form>` for the username and password inputs.
-  - Use an `<f7-list-button>` for the "Login" button.
-    - This button should be disabled when `isPasswordLoading` or `isGoogleLoading` is true.
-    - It should show a preloader when `isPasswordLoading` is true.
-- **Separator:**
-  - Include a clear visual separator (e.g., `<f7-block-title>Atau</f7-block-title>`) between the two login methods.
-- **Google Login Button:**
-  - Use an `<f7-button large fill social="google" @click="handleGoogleLogin">Login dengan Google</f7-button>`.
-  - This button should be disabled when `isPasswordLoading` or `isGoogleLoading` is true.
-  - It should show a preloader when `isGoogleLoading` is true.
-- Display any login errors returned from the API in an `<f7-block>` or a toast notification.
-"""
-
-
---- END OF FILE: frontend-pwa\.gemini\commands\generate-login-page.toml ---
-
-
-
-========================================================================
-## FILE: frontend-pwa\.gemini\commands\generate-offline-handler.toml
-========================================================================
-
-# Perintah untuk menghasilkan service handler offline (VERSI REFACTOR).
-description = "Generate the core OfflineService class for IndexedDB using Dexie.js, with an updated schema and methods to support the new UI flow."
-
-prompt = """
-Generate a TypeScript class named `OfflineService` located in `src/services/offline/OfflineService.ts`, using Dexie.js.
-
-**1. Database Schema Definition (Dexie - Diperbarui):**
-Define the Dexie database 'CapiDB' with the following stores:
-
-- **`assignments`**:
-  - `primary key`: `[activityId, assignmentId]`
-  - `indexes`: `[activityId, status]`
-
-- **`form_schemas` (BARU)**:
-  - `primary key`: `activityId` (Menyimpan satu skema aktif per kegiatan)
-  - `purpose`: Menyimpan objek form_schema secara terpisah agar mudah diakses.
-
-- **`sync_queue`**:
-  - `primary key`: `++id`
-  - `indexes`: `metadata.activityId`
-
-- **`master_data`**:
-  - `primary key`: `key` (string, e.g., 'KBLI_2020')
-  - This table is a simple **key-value document store** for holding large master data JSON objects. The key combines the type and version.
-  - This is a key-value store. The key itself should contain the `activityId` for activity-specific master data to ensure proper namespacing.
-
-- **`app_metadata`**:
-  - `primary key`: `key` (string, e.g., 'lastSyncTimestamp_kegiatan_123')
-  - `no indexes needed`
-  - This table is a simple key-value store for client-side app settings.
-
-- **`error_logs`**:
-  - `primary key`: `id` (auto-incrementing integer, `++id`)
-  - `indexes`: `timestamp`
-  - This table queues client-side error logs. It is global and does not need to be scoped by `activityId`.
-
-**2. Public Methods Implementation (Diperbarui):**
-Implement the following public methods.
-
-// --- Metode Pengecekan & Inisialisasi ---
-/**
- * (BARU) Memeriksa dengan cepat apakah data untuk sebuah kegiatan sudah ada di IndexedDB.
- * @param activityId - ID kegiatan.
- * @returns {Promise<boolean>} True jika ada setidaknya satu assignment.
- */
-- `async hasDataForActivity(activityId: string): Promise<boolean>`
-
-/**
- * (BARU) Menghapus semua data yang terkait dengan satu kegiatan.
- * Digunakan sebelum menjalankan "Sync Full Assignment". Harus transaksional.
- * @param activityId - ID kegiatan.
- */
-- `async clearDataForActivity(activityId: string): Promise<void>`
-
-// --- Metode Akses Data ---
-- `async storeAssignment(activityId: string, assignmentData: AssignmentResponse): Promise<void>`
-- `async getAssignmentById(activityId: string, assignmentId: string): Promise<AssignmentResponse | undefined>`
-- `async getAllAssignments(activityId: string): Promise<AssignmentResponse[]>`
-
-// --- Metode Form Schema ---
-/**
- * (BARU) Menyimpan form schema untuk sebuah kegiatan.
- * @param activityId
- * @param schema
- */
-- `async storeFormSchema(activityId: string, schema: FormSchema): Promise<void>`
-
-/**
- * (BARU) Mengambil form schema yang tersimpan untuk sebuah kegiatan.
- * @param activityId
- * @returns {Promise<FormSchema | undefined>}
- */
-- `async getFormSchema(activityId: string): Promise<FormSchema | undefined>`
-
-- `async queueForSync(action: SyncAction): Promise<void>`
-  # --> PERUBAHAN: Pastikan `action.metadata` sudah berisi `activityId`.
-  - Adds a new action to the `sync_queue` table. The `action.metadata` object MUST contain the relevant `activityId`.
-
-- `async getNextQueueItem(): Promise<SyncAction | undefined>`
-  - Retrieves the oldest 'pending' item from the `sync_queue`. The returned object will contain the `activityId` in its metadata.
-
-- `async updateQueueItemStatus(id: number, status: 'processing' | 'completed' | 'failed', error?: string): Promise<void>`
-  - Updates the status of an item in the `sync_queue`.
-
-- `async applyServerUpdates(activityId: string, updates: ServerUpdatePayload): Promise<void>`
-  - JSDoc harus diperjelas: Metode ini sekarang digunakan oleh SEMUA jenis sync download (Initial, Delta, Full) untuk memproses payload dan menyimpannya ke DB.
-
-- `async storeErrorLog(log: ErrorLog): Promise<void>`
-  - Adds a new error log to the global `error_logs` table.
-
-- `async getMetadata<T>(key: string): Promise<T | undefined>`
-  - Retrieves a value from the `app_metadata` table by its key.
-
-- `async setMetadata(key: string, value: any): Promise<void>`
-  - Performs an "upsert" on the `app_metadata` table.
-
-- `async storeMasterData(key: string, data: object): Promise<void>`
-  - Performs an "upsert" on the `master_data` table using the provided key.
-  - `async getMasterData<T>(key: string): Promise<T | undefined>`
-  - Retrieves a full master data object from the `master_data` table by its key.
-
-**3. Architectural Requirements:**
-- All methods that interact with Dexie must be `async`.
-- Ensure all database operations are non-blocking.
-- Include detailed JSDoc comments for each method.
-- The class should export a single, initialized instance of `OfflineService`.
-"""
-
-
---- END OF FILE: frontend-pwa\.gemini\commands\generate-offline-handler.toml ---
-
-
-
-========================================================================
-## FILE: frontend-pwa\.gemini\commands\generate-sync-engine.toml
-========================================================================
-
-# Perintah untuk menghasilkan SyncEngine, otak sinkronisasi (VERSI REFACTOR).
-description = "Generate the refactored SyncEngine class, orchestrating multiple sync strategies (initial, delta, full) and a separate background upload process."
-
-prompt = """
-Generate a TypeScript class named `SyncEngine` located in `src/services/sync/SyncEngine.ts`. This class will orchestrate the entire two-way data synchronization process by coordinating between `OfflineService` and the refactored `ApiClient`.
-
-The engine must be a Singleton and manage its own state.
-
-**1. State Management:**
-- The engine must have a reactive state to track its status. Use a Pinia store or a simple reactive object. The state should differentiate between download and upload processes.
-- **States:** `idle`, `downloading_initial`, `downloading_delta`, `downloading_full`, `uploading`, `error`.
-- This state MUST be publicly readable so the UI can display fine-grained feedback (e.g., "Mengunduh data awal...", "Mengirim perubahan...").
-
-**2. Public Methods: User-Initiated Download Strategies**
-These methods are called directly by the UI (e.g., from the ActivityDashboardPage).
-
-/**
- * (BARU) Mengelola pengunduhan data besar pertama kali untuk sebuah kegiatan.
- * @param activityId
- */
-- `async performInitialDownloadForActivity(activityId: string): Promise<void>`:
-  1. Set state to `downloading_initial`.
-  2. Check for internet connection.
-  3. Call `apiClient.performInitialDownload(activityId)`.
-  4. On success, pass the entire payload to `offlineService.applyServerUpdates(activityId, payload)`. This method should be transactional.
-  5. Save the current timestamp as the `lastSyncTimestamp` for this activity using `offlineService.setMetadata(...)`.
-  6. On error, set state to `error`.
-  7. In a `finally` block, reset state to `idle`.
-
-/**
- * (BARU) Mengelola pengunduhan perubahan delta.
- * @param activityId
- */
-- `async performDeltaSync(activityId: string): Promise<void>`:
-  1. Set state to `downloading_delta`.
-  2. Get `lastSyncTimestamp` from `offlineService.getMetadata(...)`.
-  3. Call `apiClient.performDeltaSync(activityId, lastSyncTimestamp)`.
-  4. On success, pass the payload to `offlineService.applyServerUpdates(...)`.
-  5. Update the `lastSyncTimestamp`.
-  6. Reset state to `idle` in a `finally` block.
-
-/**
- * (BARU) Mengelola proses overwrite sync.
- * @param activityId
- */
-- `async performFullOverwriteSync(activityId: string): Promise<void>`:
-  1. Set state to `downloading_full`.
-  2. Call `offlineService.clearDataForActivity(activityId)` to wipe local data first.
-  3. Call `apiClient.performFullResync(activityId)`.
-  4. On success, pass payload to `offlineService.applyServerUpdates(...)`.
-  5. Update the `lastSyncTimestamp`.
-  6. Reset state to `idle` in a `finally` block.
-
-**3. Private Method: Automatic Background Upload Process**
-This process runs independently of user actions, focusing only on sending data to the server.
-
-/**
- * (REFACTORED) Proses internal yang berjalan otomatis untuk mengosongkan sync_queue.
- */
-- `private async _processUploadQueue(): Promise<void>`:
-  1. Check if state is already `uploading`. If so, exit to prevent concurrency.
-  2. Set state to `uploading`.
-  3. In a loop, get a BATCH of pending actions from `OfflineService.getNextQueueItem()`.
-  4. If the queue is empty, break the loop.
-  5. Use a `switch` statement on the action `type` (e.g., 'SUBMIT_ASSIGNMENT') to call the appropriate `ApiClient` method (e.g., `apiClient.submitAssignmentBatch(...)`).
-  6. On success, mark the batch as `'completed'`.
-  7. On failure, handle retries or mark as `'failed'`.
-  8. Reset state to `idle` in a `finally` block.
-
-**4. Initialization and Triggers:**
-
-- `initialize()`:
-  - This method is called once when the app starts. It sets up triggers for the **background upload process only**.
-  - **`online` event listener:** When the browser comes online, call `this._processUploadQueue()`.
-  - **Scheduled Upload:** Use `setInterval` to periodically call `this._processUploadQueue()`. This ensures completed work is sent to the server regularly without user intervention.
-  - **(IMPORTANT)** The user-initiated download methods (`performInitialDownload`, etc.) are NOT triggered automatically. They are only called by the UI.
-
-**5. Architectural Requirements:**
-- Must be a singleton.
-- Must inject `OfflineService` and `ApiClient`.
-- Provide a clear way for the UI to subscribe to its state changes.
-- Include detailed JSDoc comments explaining the difference between the download strategies and the upload process.
-"""
-
-
---- END OF FILE: frontend-pwa\.gemini\commands\generate-sync-engine.toml ---
 
 
 

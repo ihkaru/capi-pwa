@@ -207,6 +207,22 @@ const processedAssignments = computed(() => {
 
 function getDeepValue(obj: any, path: string) {
   if (path === 'status') return obj.status || 'Assigned';
+
+  // Handle prefilled_data specifically, as it might be a JSON string
+  if (path.startsWith('prefilled_data.')) {
+    let prefilled = obj.prefilled_data;
+    if (typeof prefilled === 'string') {
+      try {
+        prefilled = JSON.parse(prefilled);
+      } catch (e) {
+        console.error('Failed to parse prefilled_data string:', prefilled);
+        return '-';
+      }
+    }
+    const nestedPath = path.substring('prefilled_data.'.length);
+    return get(prefilled, nestedPath, '-');
+  }
+
   return get(obj, path, '-');
 }
 

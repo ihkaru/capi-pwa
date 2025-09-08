@@ -38,5 +38,18 @@ class AssignmentResponse extends Model
         return $this->belongsTo(Assignment::class, 'assignment_id');
     }
 
-    
+    /**
+     * Get the responses attribute.
+     *
+     * @param  string|null  $value
+     * @return object
+     */
+    public function getResponsesAttribute($value): object
+    {
+        $decoded = json_decode($value, true);
+        if (empty($decoded)) {
+            return (object) [];
+        }
+        return (object) $decoded;
+    }
 }

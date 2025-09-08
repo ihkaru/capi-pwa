@@ -2,6 +2,8 @@
   <f7-page @page:afterin="onPageAfterIn">
     <f7-navbar :title="formStore.state.assignment?.assignment_label || 'Memuat...'" back-link="Kembali"></f7-navbar>
 
+
+
     <f7-block v-if="isRejectedByPmlOrAdmin && formStore.state.assignmentResponse?.notes" class="rejected-notes-block">
       <f7-block-header>Catatan Penolakan</f7-block-header>
       <div class="block-content">
@@ -118,125 +120,12 @@
         currentPage.title }}</f7-block-title>
 
       <f7-list form class="no-hairlines form-inputs-list">
-        <template v-for="question in currentPage.questions" :key="question.id">
-          <div class="form-group" :data-question-id="question.id"
-            v-if="!question.conditionalLogic?.showIf || executeLogic(question.conditionalLogic.showIf, formStore.responses)">
-
-            <!-- Text, Textarea, Number Inputs -->
-            <template v-if="question.type === 'text' || question.type === 'textarea' || question.type === 'number'">
-              <div class="form-label">
-                {{ question.label }}
-                <span v-if="question.required" class="required-indicator">*</span>
-              </div>
-              <f7-list-input inputStyle="margin-left: 0; margin-right: 0;" :type="question.type"
-                :placeholder="question.placeholder || 'Masukkan jawaban...'"
-                :value="formStore.responses[question.id] || ''"
-                @input="formStore.updateResponse(question.id, $event.target.value)"
-                @blur="formStore.touchField(question.id)" :class="{ 'input-error': validationErrors.has(question.id) }"
-                :disabled="isQuestionDisabled(question)" />
-
-              <!-- Error Message (will be reactive) -->
-              <div v-if="validationErrors.has(question.id)" class="input-error-message">
-                {{ validationErrors.get(question.id).message }}
-              </div>
-
-              <div v-if="question.info" class="input-info-message">{{ question.info }}</div>
-            </template>
-
-            <!-- Select Input -->
-            <template v-else-if="question.type === 'select'">
-              <div class="form-label">
-                {{ question.label }}
-                <span v-if="question.required" class="required-indicator">*</span>
-              </div>
-              <f7-list-input outline type="select" :placeholder="question.placeholder || 'Pilih salah satu...'"
-                :value="formStore.responses[question.id] || ''"
-                @change="formStore.updateResponse(question.id, $event.target.value)"
-                @blur="formStore.touchField(question.id)" :class="{ 'input-error': validationErrors.has(question.id) }"
-                :disabled="isQuestionDisabled(question)">
-                <option value="" disabled>-- Pilih salah satu --</option>
-                <option v-for="option in question.options" :key="option.value" :value="option.value">
-                  {{ option.label }}
-                </option>
-              </f7-list-input>
-
-              <!-- Error Message (will be reactive) -->
-              <div v-if="validationErrors.has(question.id)" class="input-error-message">
-                {{ validationErrors.get(question.id).message }}
-              </div>
-
-              <div v-if="question.info" class="input-info-message">{{ question.info }}</div>
-            </template>
-
-            <!-- Image Input -->
-            <template v-else-if="question.type === 'image'">
-              <div class="form-label">
-                {{ question.label }}
-                <span v-if="question.required" class="required-indicator">*</span>
-              </div>
-              <input type="file" accept="image/*" capture="environment" style="display: none;"
-                :ref="(el) => (imageInputs[question.id] = el)"
-                @change="(event) => handleFileSelected(question.id, event)" />
-
-              <div class="photo-container">
-                <div class="photo-preview-container">
-                  <img v-if="formStore.responses[question.id]" :src="getImageSrc(formStore.responses[question.id])"
-                    class="photo-preview" @click="() => handleImageClick(question)" />
-                  <div v-else class="photo-placeholder" @click="() => openCamera(question.id)">
-                    <f7-icon f7="camera" size="48px" color="#999"></f7-icon>
-                    <span>Ketuk untuk mengambil foto</span>
-                  </div>
-                </div>
-
-                <f7-button large fill @click="() => openCamera(question.id)" class="photo-button"
-                  :disabled="isQuestionDisabled(question)">
-                  <f7-icon f7="camera_fill" class="margin-right-half"></f7-icon>
-                  {{ formStore.responses[question.id] ? 'Ambil Ulang Foto' : 'Ambil Foto' }}
-                </f7-button>
-              </div>
-
-              <!-- Error Message (will be reactive) -->
-              <div v-if="validationErrors.has(question.id)" class="input-error-message">
-                {{ validationErrors.get(question.id).message }}
-              </div>
-
-              <div v-if="question.info" class="input-info-message">{{ question.info }}</div>
-            </template>
-
-            <!-- Geotag Input -->
-            <template v-else-if="question.type === 'geotag'">
-              <div class="form-label">
-                {{ question.label }}
-                <span v-if="question.required" class="required-indicator">*</span>
-              </div>
-
-              <div class="geotag-container">
-                <GeotagPreview :location="formStore.responses[question.id] || null"
-                  @update:location="newLocation => formStore.updateResponse(question.id, newLocation)" />
-
-                <f7-button large fill @click="handleGeotagCapture(question.id)" class="geotag-button"
-                  :disabled="isQuestionDisabled(question)">
-                  <f7-icon f7="placemark_fill" class="margin-right-half"></f7-icon>
-                  {{ formStore.responses[question.id] ? 'Ambil Ulang Lokasi' : 'Ambil Lokasi' }}
-                </f7-button>
-              </div>
-
-              <!-- Error Message (will be reactive) -->
-              <div v-if="validationErrors.has(question.id)" class="input-error-message">
-                {{ validationErrors.get(question.id).message }}
-              </div>
-
-              <div v-if="question.info" class="input-info-message">{{ question.info }}</div>
-            </template>
-
-            <!-- Roster Input -->
-            <template v-else-if="question.type === 'roster'">
-              <RosterList :rosterQuestion="question" :rosterData="formStore.responses[question.id] || []"
-                :assignmentId="currentAssignmentId" :disabled="isQuestionDisabled(question)" />
-            </template>
-
-          </div>
-        </template>
+        <QuestionRenderer v-for="question in currentPage.questions" :key="question.id" :question="question"
+          :responses="formStore.responses" :disabled="isQuestionDisabled(question)" :assignmentId="currentAssignmentId"
+          :validationErrors="validationErrors" :getImageSrc="getImageSrc" :full-question-id="question.id"
+          @update:response="handleUpdateResponse" @file-selected="handleFileSelected" @image-click="handleImageClick"
+          @open-camera="openCamera" @capture-geotag="handleGeotagCapture"
+          :ref="(el) => { if (el) questionRendererRefs[question.id] = el }" />
       </f7-list>
 
       <f7-block class="form-nav-container">
@@ -268,6 +157,7 @@ import { useUiStore } from '@/js/stores/uiStore';
 import { debounce } from 'lodash-es';
 import { Geolocation } from '@capacitor/geolocation';
 import RosterList from '@/components/RosterList.vue';
+import QuestionRenderer from '@/components/QuestionRenderer.vue';
 import { executeLogic } from '@/js/services/logicEngine';
 import ApiClient from '@/js/services/ApiClient';
 import GeotagPreview from '@/components/GeotagPreview.vue';
@@ -281,7 +171,7 @@ const uiStore = useUiStore();
 const currentPageIndex = ref(0);
 const summaryPopupOpened = ref(false);
 const summarySheetOpened = ref(false);
-const imageInputs = ref({});
+const questionRendererRefs = ref({});
 const visibleSummaryCategory = ref('');
 const localPreviewUrls = ref(new Map<string, string>());
 
@@ -301,25 +191,37 @@ const getApiRoot = () => {
 }
 
 const getImageSrc = (value: any) => {
+  // NEW LOGIC
   if (!value) return '';
 
-  // Handle offline, locally captured images
-  if (typeof value === 'object' && value.previewUrl) {
-    return value.previewUrl;
+  // 1. Handle local blobs from the new reactive cache
+  if (typeof value === 'object' && value.localId) {
+    const cachedUrl = formStore.photoBlobCache.get(value.localId);
+    if (cachedUrl) {
+      console.log(`[CAPI-LOG] getImageSrc: Found cached blob URL for localId ${value.localId}`);
+      return cachedUrl;
+    }
+    console.warn(`[CAPI-WARN] getImageSrc: No blob URL found in cache for localId ${value.localId}. The image may not appear.`);
+    return ''; // Return empty if not found to avoid broken image links
   }
 
-  // Handle synced images (value is the stored path)
+  // 2. Handle synced images (value is the stored path)
   if (typeof value === 'string' && !value.startsWith('data:image')) {
-    return `${getApiRoot()}/storage/${value}`;
+    const src = `${getApiRoot()}/storage/${value}`;
+    console.log(`[CAPI-LOG] getImageSrc: Using synced image URL: ${src}`);
+    return src;
   }
 
-  // Fallback for old base64 data for backward compatibility
+  // 3. Fallback for old base64 data for backward compatibility
   if (typeof value === 'string' && value.startsWith('data:image')) {
+    console.log('[CAPI-LOG] getImageSrc: Using fallback base64 data URL.');
     return value;
   }
 
+  console.log('[CAPI-LOG] getImageSrc: Value is not a recognized image format.', value);
   return '';
 };
+
 
 const currentPage = computed(() => {
   return formStore.pages[currentPageIndex.value] || { title: '', questions: [] };
@@ -350,7 +252,8 @@ const handleImageClick = (question: any) => {
 
   // If the field is disabled for the current user (e.g. PML mode), always show the viewer.
   // Also show viewer if the image is already synced (i.e., not a local base64 data URL).
-  if (isQuestionDisabled(question) || !imageValue.startsWith('data:image')) {
+  const isSyncedImage = typeof imageValue === 'string' && !imageValue.startsWith('data:image');
+  if (isQuestionDisabled(question) || isSyncedImage) {
     const imageUrl = getImageSrc(imageValue); // Use the existing helper to get the full URL
     const photoBrowser = f7.photoBrowser.create({
       photos: [{ url: imageUrl, caption: question.label }],
@@ -544,7 +447,8 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
-  onPageBeforeOut(); // Ensure cleanup on component destruction
+  formStore.clearPhotoBlobCache();
+  console.log('[CAPI-LOG] InterviewFormPage unmounted, photo cache cleared.');
 });
 
 // Since v-model updates the store directly, the watcher on responses
@@ -556,17 +460,21 @@ const debouncedSave = debounce(() => {
 watch(() => formStore.responses, debouncedSave, { deep: true });
 
 const debouncedLabelUpdate = debounce(() => {
-    if (formStore.state.isNew) { // Only update labels for new assignments
-        formStore.updateAssignmentLabel();
-    }
+  if (formStore.state.isNew) { // Only update labels for new assignments
+    formStore.updateAssignmentLabel();
+  }
 }, 500); // Debounce to avoid rapid updates while typing
 
 watch(() => formStore.responses, debouncedLabelUpdate, { deep: true });
 
+function handleUpdateResponse({ questionId, value }) {
+  formStore.updateResponse(questionId, value);
+}
+
 function openCamera(questionId: string) {
-  const inputEl = imageInputs.value[questionId];
-  if (inputEl) {
-    inputEl.click();
+  const rendererInstance = questionRendererRefs.value[questionId];
+  if (rendererInstance) {
+    rendererInstance.triggerFileInputClick();
   }
 }
 
@@ -578,33 +486,25 @@ async function handleFileSelected(questionId: string, event: Event) {
   const userId = authStore.user?.id;
 
   if (!userId) {
-      f7.dialog.alert('Tidak dapat menyimpan foto: pengguna tidak terautentikasi.', 'Error');
-      return;
+    f7.dialog.alert('Tidak dapat menyimpan foto: pengguna tidak terautentikasi.', 'Error');
+    return;
   }
 
   try {
     const localPhotoId = crypto.randomUUID();
-    const photoBlob = {
-        id: localPhotoId,
-        user_id: userId,
-        blob: file
-    };
+    await activityDB.photoBlobs.add({ id: localPhotoId, user_id: userId, blob: file });
 
-    await activityDB.photoBlobs.add(photoBlob);
+    // NEW: Add the new photo to the store's cache immediately
+    formStore.addPhotoToCache(localPhotoId, file);
 
-    const previewUrl = URL.createObjectURL(file);
-    localPreviewUrls.value.set(questionId, previewUrl);
-
-    formStore.updateResponse(questionId, { 
-        localId: localPhotoId, 
-        previewUrl: previewUrl 
-    });
+    // Update the response with a simple object, not the temporary URL
+    formStore.updateResponse(questionId, { localId: localPhotoId });
 
     f7.toast.show({ text: 'Foto berhasil disimpan secara lokal!', closeTimeout: 2000 });
 
   } catch (error) {
-      console.error('Gagal menyimpan foto secara lokal:', error);
-      f7.dialog.alert('Gagal menyimpan foto secara lokal.', 'Error Penyimpanan');
+    console.error('Gagal menyimpan foto secara lokal:', error);
+    f7.dialog.alert('Gagal menyimpan foto secara lokal.', 'Error Penyimpanan');
   }
 }
 
