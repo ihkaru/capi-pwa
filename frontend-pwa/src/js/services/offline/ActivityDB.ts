@@ -95,7 +95,7 @@ export class ActivityDB extends Dexie {
     super('CerdasActivityDB'); // Nama database
 
     // VERSI 5: Menambahkan index pada status assignment
-    this.version(5).stores({
+            this.version(5).stores({
       activities: '[id+user_id], user_id',
       assignments: 'id, [activity_id+user_id+status], [activity_id+user_id], user_id, status',
       formSchemas: '[activity_id+user_id], user_id',
@@ -118,10 +118,10 @@ export class ActivityDB extends Dexie {
 
     // NAIKKAN VERSI DATABASE KE 3
     this.version(3).stores({
-      activities: 'id, user_id',
+      activities: '[id+user_id], user_id',
       assignments: 'id, activity_id, user_id, level_6_code_full, level_4_code_full',
       // Hapus assignmentResponses
-      formSchemas: 'activity_id, user_id',
+      formSchemas: '[activity_id+user_id], user_id',
       masterData: '[activity_id+type+version], user_id',
       syncQueue: '++id, type, status, user_id',
       responseHistories: '++id, assignment_response_id, user_id',
@@ -133,10 +133,10 @@ export class ActivityDB extends Dexie {
     });
 
     this.version(2).stores({
-      activities: 'id, user_id',
-      assignments: 'id, activity_id, user_id, level_6_code_full, level_4_code_full',
+      activities: '[id+user_id], user_id',
+      assignments: 'id, activity_id, user_id',
       assignmentResponses: 'assignment_id, user_id',
-      formSchemas: 'activity_id, user_id',
+      formSchemas: '[activity_id+user_id], user_id',
       masterData: '[activity_id+type+version], user_id',
       syncQueue: '++id, type, status, user_id',
       responseHistories: '++id, assignment_response_id, user_id',
@@ -144,10 +144,10 @@ export class ActivityDB extends Dexie {
     });
 
     this.version(1).stores({
-      activities: 'id, user_id',
+      activities: '[id+user_id], user_id',
       assignments: 'id, activity_id, user_id',
       assignmentResponses: 'assignment_id, user_id',
-      formSchemas: 'activity_id, user_id',
+      formSchemas: '[activity_id+user_id], user_id',
       masterData: '[activity_id+type+version], user_id',
       syncQueue: '++id, type, status, user_id',
       responseHistories: '++id, assignment_response_id, user_id',

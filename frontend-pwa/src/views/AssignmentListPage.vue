@@ -62,7 +62,6 @@
             v-for="col in sortableColumns"
             :key="col.key"
             :title="col.label"
-            group-title="Pilih Kolom"
             @click="applySort(col.key)"
           >
             <f7-icon f7="checkmark" v-if="sortConfig.key === col.key"></f7-icon>

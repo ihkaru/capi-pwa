@@ -451,5 +451,12 @@ export const useDashboardStore = defineStore('dashboard', () => {
     addAssignment,
     deletePendingAssignment,
     createNewAssignment,
+    updateAssignmentInState(updatedAssignment: Assignment) {
+      const index = assignments.value.findIndex(a => a.id === updatedAssignment.id);
+      if (index !== -1) {
+        assignments.value[index] = updatedAssignment;
+        console.log(`[dashboardStore] Updated assignment ${updatedAssignment.id} in state.`);
+      }
+    },
   };
 });

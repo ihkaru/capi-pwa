@@ -327,7 +327,10 @@ export const useFormStore = defineStore('form', () => {
             await activityDB.assignmentResponses.put(plainResponse);
             await activityDB.assignments.put(plainAssignment);
             
-            console.log('Successfully saved responses and updated assignment timestamp in local DB.');
+            // Update dashboardStore state to ensure reactivity
+            dashboardStore.updateAssignmentInState(plainAssignment);
+
+            console.log('[CAPI-DEBUG] Saved to DB and updated dashboardStore state.');
         }
     }
 
